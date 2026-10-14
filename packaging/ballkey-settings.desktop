@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=BallKey
+GenericName=Mouse & Trackball Buttons
+Comment=Choose what each button on your mouse or trackball does
+Exec=/usr/bin/python3 /usr/lib/ballkey/ballkey-settings.py
+Icon=ballkey
+Terminal=false
+Categories=Settings;HardwareSettings;Qt;
+Keywords=mouse;trackball;buttons;remap;

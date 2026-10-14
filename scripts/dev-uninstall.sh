@@ -12,6 +12,8 @@ rm -f /etc/systemd/system/ballkey.service
 rm -f /etc/modules-load.d/ballkey-uinput.conf
 rm -f /usr/share/dbus-1/system.d/org.ballkey.Daemon.conf
 rm -f /usr/share/polkit-1/actions/org.ballkey.policy
+rm -f /usr/share/applications/ballkey-settings.desktop
+rm -f /usr/share/icons/hicolor/scalable/apps/ballkey.svg
 rm -rf /usr/lib/ballkey /etc/ballkey
 systemctl reload dbus
 systemctl daemon-reload

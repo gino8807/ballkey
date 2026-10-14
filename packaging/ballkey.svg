@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Trackball body -->
+  <path d="M8 40c0-14 10-26 24-26s24 12 24 26v4c0 7-5 12-12 12H20c-7 0-12-5-12-12z" fill="#3b4252"/>
+  <!-- Buttons -->
+  <path d="M10 30c2-6 6-11 12-14l3 9c-4 2-7 5-8 9z" fill="#5e81ac"/>
+  <path d="M54 30c-2-6-6-11-12-14l-3 9c4 2 7 5 8 9z" fill="#5e81ac"/>
+  <!-- Ball -->
+  <circle cx="32" cy="38" r="13" fill="#d08770"/>
+  <circle cx="27" cy="33" r="4" fill="#ffffff" opacity="0.45"/>
+</svg>
