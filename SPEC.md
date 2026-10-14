@@ -20,7 +20,7 @@ A simple graphical button remapper for any mouse or trackball on Linux, inspired
 
 1. **Works with any brand** of mouse or trackball. Identify buttons by what the device reports, never by hardcoded model.
 2. **No terminal for end users.** Installing the package sets everything up; the app is fully graphical.
-3. **Loads at boot** with no user action, and **reapplies on reconnect** (unplug/replug, wireless wake, sleep/resume).
+3. **Loads at boot** with no user action (on by default; the app has a "Start remapping at boot" toggle to turn this off), and **reapplies on reconnect** (unplug/replug, wireless wake, sleep/resume).
 4. **Can't lock the user out.** If the user removes left click from every button, show a confirmation that auto-reverts in 15 seconds unless confirmed (like display settings). If the config is broken or the service crashes, the device must fall back to working normally.
 5. **Works on Wayland and X11**, any desktop (KDE, GNOME, etc.).
 
@@ -85,7 +85,7 @@ A simple graphical button remapper for any mouse or trackball on Linux, inspired
 
 ## Packaging
 
-- Use **nfpm** with one config to build `.rpm` first, later `.deb` and Arch `.pkg.tar.zst`.
+- Use **nfpm** with one config to build `.rpm`, `.deb` and Arch `.pkg.tar.zst` (pacman) packages.
 - The package installs: the daemon, the GUI, a `.desktop` launcher with icon, the systemd service, the D-Bus and polkit policy files, and the `modules-load.d` file.
 - Post-install script: enable and start the systemd service. Post-remove script: stop and disable it.
 - Python dependencies: prefer distro packages where available; otherwise bundle them so install never needs pip.
@@ -98,13 +98,13 @@ A simple graphical button remapper for any mouse or trackball on Linux, inspired
 
 **Phase 2: Boot and hotplug.** systemd service, `uinput` autoload, pyudev reconnect handling, fail-safe passthrough. ✅ when: mapping works after a reboot with no action from me, and survives unplug/replug.
 
-**Phase 3: First package.** Build an `.rpm` with nfpm that installs and enables everything. ✅ when: I can install the .rpm by double-clicking it, reboot, and the mapping works; uninstalling removes it cleanly.
+**Phase 3: Packages.** Build `.rpm`, `.deb` and Arch (pacman) packages with nfpm that install and enable everything. Upgrades must keep the user's settings and their boot on/off choice. ✅ when: I can install the .rpm by double-clicking it, reboot, and the mapping works; uninstalling removes it cleanly.
 
 **Phase 4: D-Bus + polkit.** Add the API above. ✅ when: a small test tool can list devices, identify a button press, and change a mapping with a password prompt.
 
 **Phase 5: GUI.** Build the settings app and the lockout-protection countdown. ✅ when: I can remap every button on my trackball using only the app, and the 15-second revert works.
 
-**Phase 6: Other distros.** Add `.deb` and Arch packages, test in a VM or container of Ubuntu/Debian and Arch. Add a README with install instructions and screenshots.
+**Phase 6: Other distros.** Test the `.deb` and Arch packages in a VM or container of Ubuntu/Debian and Arch. Add a README with install instructions and screenshots.
 
 ## Later ideas (not v1)
 

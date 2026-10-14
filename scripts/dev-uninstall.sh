@@ -11,6 +11,7 @@ systemctl disable --now ballkey.service 2>/dev/null
 rm -f /etc/systemd/system/ballkey.service
 rm -f /etc/modules-load.d/ballkey-uinput.conf
 rm -f /usr/share/dbus-1/system.d/org.ballkey.Daemon.conf
+rm -f /usr/share/dbus-1/system-services/org.ballkey.Daemon.service
 rm -f /usr/share/polkit-1/actions/org.ballkey.policy
 rm -f /usr/share/applications/ballkey-settings.desktop
 rm -f /usr/share/icons/hicolor/scalable/apps/ballkey.svg

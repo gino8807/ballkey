@@ -1,0 +1,7 @@
+# Lets D-Bus start the BallKey service on demand, so the settings app
+# works even when "Start remapping at boot" is turned off.
+[D-BUS Service]
+Name=org.ballkey.Daemon
+Exec=/bin/false
+User=root
+SystemdService=ballkey.service

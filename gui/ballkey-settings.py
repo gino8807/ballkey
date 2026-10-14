@@ -20,7 +20,8 @@ from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot, SLOT
 from PySide6.QtDBus import (QDBusConnection, QDBusInterface, QDBusMessage,
                             QDBusPendingCallWatcher)
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import (QAbstractItemView, QApplication, QComboBox,
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox,
+                               QComboBox,
                                QDialog, QHBoxLayout, QHeaderView, QLabel,
                                QMessageBox, QPushButton, QTableWidget,
                                QTableWidgetItem, QVBoxLayout, QWidget)
@@ -146,8 +147,14 @@ class DaemonClient(QObject):
         """Save in the background (a password prompt may appear).
         done(error_name, error_message) is called when finished;
         both are empty on success."""
-        pending = self.iface.asyncCallWithArgumentList(
-            "SetConfig", [json.dumps(config)])
+        self.call_async("SetConfig", [json.dumps(config)], done)
+
+    def set_boot_enabled(self, enabled, done):
+        """Like set_config, for the start-at-boot setting."""
+        self.call_async("SetBootEnabled", [enabled], done)
+
+    def call_async(self, method, args, done):
+        pending = self.iface.asyncCallWithArgumentList(method, args)
         watcher = QDBusPendingCallWatcher(pending, self)
         self.watchers.add(watcher)
 
@@ -383,6 +390,12 @@ class MainWindow(QWidget):
         buttons.addWidget(self.defaults_button)
         buttons.addWidget(self.apply_button)
 
+        self.boot_box = QCheckBox("Start remapping at boot")
+        self.boot_box.setToolTip(
+            "When off, buttons behave normally after a restart until you "
+            "open BallKey.")
+        self.boot_box.clicked.connect(self.toggle_boot)
+
         self.hint = QLabel()
         self.status = QLabel()
         self.status.setStyleSheet("color: palette(placeholder-text);")
@@ -392,6 +405,7 @@ class MainWindow(QWidget):
         layout.addWidget(self.table, 1)
         layout.addWidget(self.hint)
         layout.addLayout(buttons)
+        layout.addWidget(self.boot_box)
         layout.addWidget(self.status)
         self.resize(560, 440)
 
@@ -408,6 +422,7 @@ class MainWindow(QWidget):
         try:
             self.saved_config = self.client.call_json("GetConfig")
             connected = self.client.call_json("ListDevices")
+            self.boot_box.setChecked(bool(self.client.call("GetBootEnabled")))
         except RuntimeError:
             self.service_ok = False
             self.refresh_status()
@@ -524,6 +539,7 @@ class MainWindow(QWidget):
         dev = self.current_device()
         ok = self.service_ok and dev is not None
         self.device_box.setEnabled(self.service_ok)
+        self.boot_box.setEnabled(self.service_ok)
         self.table.setEnabled(ok)
         self.defaults_button.setEnabled(ok)
         self.identify_button.setEnabled(ok and dev["connected"])
@@ -610,6 +626,22 @@ class MainWindow(QWidget):
 
         self.client.set_config(old, done)
 
+    def toggle_boot(self, enabled):
+        self.set_busy(True, "Saving… (a password prompt may appear)")
+
+        def done(error_name, error_message):
+            self.set_busy(False)
+            if error_name:
+                self.boot_box.setChecked(not enabled)   # undo the click
+                self.show_save_error(error_name, error_message)
+            elif enabled:
+                self.hint.setText("Remapping will start at boot.")
+            else:
+                self.hint.setText("Remapping won't start at boot. After a "
+                                  "restart, open BallKey to turn it on.")
+
+        self.client.set_boot_enabled(enabled, done)
+
     def show_save_error(self, name, message):
         if name.endswith("NotAuthorized"):
             self.hint.setText("Not saved: the password was not given.")
@@ -620,7 +652,7 @@ class MainWindow(QWidget):
 
     def set_busy(self, busy, text=""):
         for w in (self.device_box, self.table, self.identify_button,
-                  self.defaults_button, self.apply_button):
+                  self.defaults_button, self.apply_button, self.boot_box):
             w.setEnabled(not busy)
         if busy:
             self.hint.setText(text)

@@ -17,6 +17,7 @@ fi
 install -Dm644 packaging/ballkey.service /etc/systemd/system/ballkey.service
 install -Dm644 packaging/ballkey-uinput.conf /etc/modules-load.d/ballkey-uinput.conf
 install -Dm644 packaging/org.ballkey.Daemon.conf /usr/share/dbus-1/system.d/org.ballkey.Daemon.conf
+install -Dm644 packaging/org.ballkey.Daemon.service /usr/share/dbus-1/system-services/org.ballkey.Daemon.service
 install -Dm644 packaging/org.ballkey.policy /usr/share/polkit-1/actions/org.ballkey.policy
 install -Dm755 gui/ballkey-settings.py /usr/lib/ballkey/ballkey-settings.py
 install -Dm644 packaging/ballkey-settings.desktop /usr/share/applications/ballkey-settings.desktop

@@ -58,6 +58,7 @@ BUS_NAME = "org.ballkey.Daemon"
 OBJECT_PATH = "/org/ballkey/Daemon"
 INTERFACE = "org.ballkey.Daemon"
 POLKIT_ACTION = "org.ballkey.configure"
+SERVICE_UNIT = "ballkey.service"
 
 EMPTY_CONFIG = {"version": 1, "device": None, "mappings": {}}
 
@@ -615,6 +616,52 @@ class Daemon(dbus.service.Object):
     @dbus.service.signal(INTERFACE, signature="s")
     def ButtonPressed(self, button):
         pass
+
+    # -- start at boot (asks systemd, the service manager) --
+
+    def systemd_manager(self):
+        obj = self.system_bus.get_object(
+            "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
+            introspect=False)
+        return dbus.Interface(obj, "org.freedesktop.systemd1.Manager")
+
+    @dbus.service.method(INTERFACE, out_signature="b",
+                         async_callbacks=("ok", "err"))
+    def GetBootEnabled(self, ok, err):
+        """True if remapping starts at boot."""
+        self.systemd_manager().GetUnitFileState(
+            SERVICE_UNIT, reply_handler=lambda state: ok(state == "enabled"),
+            error_handler=err)
+
+    @dbus.service.method(INTERFACE, in_signature="b",
+                         sender_keyword="sender",
+                         async_callbacks=("ok", "err"))
+    def SetBootEnabled(self, enabled, sender, ok, err):
+        """Turn starting at boot on or off (polkit password prompt).
+        Doesn't stop or start remapping right now."""
+        def failed(e):
+            log.error("Changing start-at-boot failed: %s", e)
+            err(dbus_error("BootSettingFailed", str(e)))
+
+        def changed(*_):
+            log.info("Start at boot turned %s.", "on" if enabled else "off")
+            # Like "systemctl daemon-reload" after "systemctl enable".
+            self.systemd_manager().Reload(reply_handler=ok,
+                                          error_handler=failed)
+
+        def authorized():
+            units = dbus.Array([SERVICE_UNIT], signature="s")
+            manager = self.systemd_manager()
+            if enabled:
+                manager.EnableUnitFiles(units, False, False,
+                                        reply_handler=changed,
+                                        error_handler=failed)
+            else:
+                manager.DisableUnitFiles(units, False,
+                                         reply_handler=changed,
+                                         error_handler=failed)
+
+        self.check_authorization(sender, authorized, err)
 
 
 # --- Commands --------------------------------------------------------------
