@@ -352,12 +352,14 @@ class MainWindow(QWidget):
         self.extra_rows = set()        # buttons found with Identify
         self.identifying = False
         self.service_ok = False
+        self.boot_known = False
 
         self.setWindowTitle("BallKey – Mouse & Trackball Buttons")
         self.setWindowIcon(QIcon.fromTheme("ballkey",
                                            QIcon.fromTheme("input-mouse")))
 
         self.device_box = QComboBox()
+        self.device_box.setPlaceholderText("No mouse or trackball found")
         self.device_box.currentIndexChanged.connect(self.on_device_chosen)
         top = QHBoxLayout()
         top.addWidget(QLabel("Device:"))
@@ -423,14 +425,24 @@ class MainWindow(QWidget):
         try:
             self.saved_config = self.client.call_json("GetConfig")
             connected = self.client.call_json("ListDevices")
-            self.boot_box.setChecked(bool(self.client.call("GetBootEnabled")))
         except RuntimeError:
             self.service_ok = False
             self.refresh_status()
             return
         self.service_ok = True
+        self.load_boot_setting()
         self.fill_devices(connected)
+        self.update_buttons()
         self.refresh_status()
+
+    def load_boot_setting(self):
+        # Optional: if it can't be read (e.g. no systemd), only the
+        # checkbox is greyed out; the rest of the app keeps working.
+        try:
+            self.boot_box.setChecked(bool(self.client.call("GetBootEnabled")))
+            self.boot_known = True
+        except RuntimeError:
+            self.boot_known = False
 
     def fill_devices(self, connected):
         configured = self.saved_config.get("device")
@@ -540,7 +552,7 @@ class MainWindow(QWidget):
         dev = self.current_device()
         ok = self.service_ok and dev is not None
         self.device_box.setEnabled(self.service_ok)
-        self.boot_box.setEnabled(self.service_ok)
+        self.boot_box.setEnabled(self.service_ok and self.boot_known)
         self.table.setEnabled(ok)
         self.defaults_button.setEnabled(ok)
         self.identify_button.setEnabled(ok and dev["connected"])

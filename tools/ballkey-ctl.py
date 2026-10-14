@@ -20,12 +20,16 @@ import sys
 
 import dbus
 from dbus.mainloop.glib import DBusGMainLoop
+import gi
 from gi.repository import GLib
 
-try:  # newer GLib; older versions only have GLib.unix_signal_add
+# Newer GLib moved unix_signal_add to GLibUnix.signal_add. Older ones
+# have no GLibUnix, or (e.g. Debian 13) a GLibUnix without it.
+try:
+    gi.require_version("GLibUnix", "2.0")
     from gi.repository import GLibUnix
     signal_add = GLibUnix.signal_add
-except ImportError:
+except (ImportError, ValueError, AttributeError):
     signal_add = GLib.unix_signal_add
 
 BUS_NAME = "org.ballkey.Daemon"

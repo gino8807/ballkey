@@ -3,7 +3,7 @@
 name: ballkey
 arch: all
 platform: linux
-version: 0.1.0
+version: 0.1.1
 release: 1
 section: utils
 priority: optional
@@ -38,6 +38,13 @@ contents:
     dst: /usr/share/icons/hicolor/scalable/apps/ballkey.svg
   - src: LICENSE
     dst: /usr/share/licenses/ballkey/LICENSE
+  # Folders the package owns, so uninstalling removes them too.
+  - dst: /usr/lib/ballkey
+    type: dir
+    file_info: {mode: 0755}
+  - dst: /usr/share/licenses/ballkey
+    type: dir
+    file_info: {mode: 0755}
   # Settings saved from the app live here.
   - dst: /etc/ballkey
     type: dir
