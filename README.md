@@ -21,7 +21,7 @@ every boot and whenever the device is reconnected.
 BallKey was vibecoded, and it's my first project. I don't know how to
 program: I described what I wanted, an AI coding assistant (Claude Code)
 wrote the code, and I tested each step on my own computer (Fedora KDE,
-with a Logitech G403 mouse) before moving on. The Debian, Ubuntu and
+with a Logitech G403 and Kensington Expert) before moving on. The Debian, Ubuntu and
 Arch packages have only been tested in containers, not on real hardware.
 
 It works well for me, but no experienced Linux developer has reviewed it
