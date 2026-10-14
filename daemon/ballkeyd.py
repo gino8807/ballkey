@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """BallKey daemon: remaps mouse/trackball buttons on Linux.
 
 How it works:

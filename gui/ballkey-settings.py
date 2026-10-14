@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """BallKey settings app: pick a device, choose an action for each button,
 click Apply.
 

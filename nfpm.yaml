@@ -1,0 +1,87 @@
+# Package recipe for nfpm. Build all three formats with:
+#   ./scripts/build-packages.sh
+name: ballkey
+arch: all
+platform: linux
+version: 0.1.0
+release: 1
+section: utils
+priority: optional
+maintainer: gino <gino8807@protonmail.com>
+vendor: BallKey
+license: GPL-3.0-or-later
+description: |-
+  Simple button remapper for mice and trackballs.
+  Choose what each button does (back, forward, copy, paste, key combos
+  and more) in a graphical app. Works with any brand, on Wayland and X11.
+
+contents:
+  - src: daemon/ballkeyd.py
+    dst: /usr/lib/ballkey/ballkeyd.py
+    file_info: {mode: 0755}
+  - src: gui/ballkey-settings.py
+    dst: /usr/lib/ballkey/ballkey-settings.py
+    file_info: {mode: 0755}
+  - src: packaging/ballkey.service
+    dst: /usr/lib/systemd/system/ballkey.service
+  - src: packaging/ballkey-uinput.conf
+    dst: /usr/lib/modules-load.d/ballkey-uinput.conf
+  - src: packaging/org.ballkey.Daemon.conf
+    dst: /usr/share/dbus-1/system.d/org.ballkey.Daemon.conf
+  - src: packaging/org.ballkey.Daemon.service
+    dst: /usr/share/dbus-1/system-services/org.ballkey.Daemon.service
+  - src: packaging/org.ballkey.policy
+    dst: /usr/share/polkit-1/actions/org.ballkey.policy
+  - src: packaging/ballkey-settings.desktop
+    dst: /usr/share/applications/ballkey-settings.desktop
+  - src: packaging/ballkey.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/ballkey.svg
+  - src: LICENSE
+    dst: /usr/share/licenses/ballkey/LICENSE
+  # Settings saved from the app live here.
+  - dst: /etc/ballkey
+    type: dir
+    file_info: {mode: 0755}
+
+scripts:
+  postinstall: packaging/scripts/postinstall.sh
+  preremove: packaging/scripts/preremove.sh
+  postremove: packaging/scripts/postremove.sh
+
+archlinux:
+  scripts:
+    # Same script; it tells install from upgrade by its arguments.
+    postupgrade: packaging/scripts/postinstall.sh
+
+# Dependency names differ per distribution.
+overrides:
+  rpm:
+    depends:
+      - python3
+      - python3-evdev
+      - python3-pyudev
+      - python3-dbus
+      - python3-gobject-base
+      - python3-pyside6
+      - polkit
+  deb:
+    depends:
+      - python3
+      - python3-evdev
+      - python3-pyudev
+      - python3-dbus
+      - python3-gi
+      - python3-pyside6.qtcore
+      - python3-pyside6.qtgui
+      - python3-pyside6.qtwidgets
+      - python3-pyside6.qtdbus
+      - polkitd
+  archlinux:
+    depends:
+      - python
+      - python-evdev
+      - python-pyudev
+      - python-dbus
+      - python-gobject
+      - pyside6
+      - polkit

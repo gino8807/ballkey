@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """Small test tool for the BallKey daemon's D-Bus API. Runs as your normal
 user (no sudo); changing settings shows the system password prompt.
 
