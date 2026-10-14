@@ -1,0 +1,10 @@
+[copr:copr.fedorainfracloud.org:@COPR_OWNER@:ballkey]
+name=BallKey updates (Copr repo owned by @COPR_OWNER@)
+baseurl=https://download.copr.fedorainfracloud.org/results/@COPR_OWNER@/ballkey/fedora-$releasever-$basearch/
+type=rpm-md
+skip_if_unavailable=True
+gpgcheck=1
+gpgkey=https://download.copr.fedorainfracloud.org/results/@COPR_OWNER@/ballkey/pubkey.gpg
+repo_gpgcheck=0
+enabled=1
+enabled_metadata=1

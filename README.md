@@ -34,9 +34,16 @@ Download the package for your distribution, then:
 
 | Distribution | Package | Install |
 |---|---|---|
-| Fedora 44+ | `ballkey-…noarch.rpm` | Double-click it (opens Discover / Software), or `sudo dnf install ./ballkey-*.noarch.rpm` |
+| Fedora 44+ | `ballkey-…fc44.noarch.rpm` | Double-click it (opens Discover / Software), or `sudo dnf install ./ballkey-*.noarch.rpm` |
 | Debian 13+, Ubuntu 26.04+ | `ballkey_…_all.deb` | `sudo apt install ./ballkey_*_all.deb` |
 | Arch Linux | `ballkey-…-any.pkg.tar.zst` | `sudo pacman -U ballkey-*-any.pkg.tar.zst` |
+
+**Fedora updates:** the Fedora package also adds BallKey's update
+repository ([COPR](https://copr.fedorainfracloud.org/coprs/gino8807/ballkey/)),
+so Discover / Software and `dnf upgrade` find new versions by themselves.
+You can also install straight from it:
+`sudo dnf copr enable gino8807/ballkey && sudo dnf install ballkey`.
+On Debian, Ubuntu and Arch, download and install new versions by hand for now.
 
 Everything else BallKey needs is installed automatically from your
 distribution's own repositories. Ubuntu 24.04 isn't supported (it has no
@@ -110,12 +117,18 @@ the device straight back, so it always falls back to working normally.
 ## Build and test
 
 ```
-./scripts/build-packages.sh     # .rpm, .deb and Arch packages into dist/
+./scripts/build-packages.sh     # .rpm (in a Fedora container), .deb and Arch packages into dist/
 ./tests/container-test.sh       # install/run/remove in Fedora, Debian, Ubuntu and Arch containers (podman)
 ```
 
 `build-packages.sh` downloads a pinned, checksum-verified copy of
 [nfpm](https://nfpm.goreleaser.com/) into `build/` the first time.
+
+The `.rpm` is built from `packaging/ballkey.spec`; the `.deb` and Arch
+packages from `nfpm.yaml`, which also holds the version number for all
+three. `./scripts/copr-upload.sh` sends the source package to the COPR
+update repository (needs a COPR API token in `~/.config/copr`; the owner
+is set in `packaging/copr-owner`).
 
 For development, `sudo ./scripts/dev-install.sh` installs straight from
 the source folder (undo with `sudo ./scripts/dev-uninstall.sh`), and
