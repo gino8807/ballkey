@@ -11,6 +11,9 @@ How it works:
 When the device is unplugged (or goes to sleep), the daemon waits and
 grabs it again as soon as it comes back.
 
+The settings app talks to the daemon over the system D-Bus (see the
+Daemon class below). Saving settings requires a polkit authorization.
+
 Fail-safe: if this program stops for any reason (Ctrl+C, crash, killed),
 the kernel releases the grab and removes the virtual device, so the real
 device goes back to working normally. If the config file is broken, the
@@ -19,24 +22,44 @@ daemon never grabs the device at all.
 Usage (needs root):
   ballkeyd.py --list                 show connected mice/trackballs
   ballkeyd.py --watch [-c CONFIG]    print buttons as you press them
-  ballkeyd.py [-c CONFIG]            run the remapper
+  ballkeyd.py [-c CONFIG]            run the daemon
 """
 
 import argparse
 import json
 import logging
+import os
 import signal
 import sys
-import time
+import tempfile
 
+import dbus
+import dbus.service
 import evdev
 import pyudev
+from dbus.mainloop.glib import DBusGMainLoop
 from evdev import ecodes
+from gi.repository import GLib
+
+try:  # newer GLib; older versions only have GLib.unix_signal_add
+    from gi.repository import GLibUnix
+    signal_add = GLibUnix.signal_add
+except ImportError:
+    signal_add = GLib.unix_signal_add
 
 DEFAULT_CONFIG = "/etc/ballkey/config.json"
 VIRTUAL_NAME_PREFIX = "BallKey"
 # How often to look for the device even if no plug-in event arrives.
 RETRY_SECONDS = 10
+# Identify mode switches itself off after this long.
+IDENTIFY_SECONDS = 60
+
+BUS_NAME = "org.ballkey.Daemon"
+OBJECT_PATH = "/org/ballkey/Daemon"
+INTERFACE = "org.ballkey.Daemon"
+POLKIT_ACTION = "org.ballkey.configure"
+
+EMPTY_CONFIG = {"version": 1, "device": None, "mappings": {}}
 
 log = logging.getLogger("ballkey")
 
@@ -62,7 +85,7 @@ def code_of(name):
     """Turn a name like 'BTN_SIDE' into its numeric code."""
     try:
         return ecodes.ecodes[name]
-    except KeyError:
+    except (KeyError, TypeError):
         raise ValueError(f"unknown key or button name: {name}") from None
 
 
@@ -78,12 +101,14 @@ class Mapping:
 
     def __init__(self, button, spec):
         self.button = button
+        if not isinstance(spec, dict):
+            raise ValueError(f"{button}: mapping must be an object")
         self.action = spec.get("action")
         if self.action in SIMPLE_ACTIONS:
             self.codes = [code_of(n) for n in SIMPLE_ACTIONS[self.action]]
         elif self.action == "keycombo":
-            keys = spec.get("keys") or []
-            if not keys:
+            keys = spec.get("keys")
+            if not isinstance(keys, list) or not keys:
                 raise ValueError(f"{button}: keycombo needs a 'keys' list")
             self.codes = [code_of(n) for n in keys]
         elif self.action in OTHER_ACTIONS:
@@ -111,24 +136,43 @@ class Mapping:
 
 # --- Config ----------------------------------------------------------------
 
-def load_config(path):
-    with open(path) as f:
-        cfg = json.load(f)
-    if cfg.get("version") != 1:
+def parse_config(cfg, strict):
+    """Check a config. Returns (device, mappings); device may be None.
+
+    strict=True: any bad mapping is an error (used when the app saves).
+    strict=False: bad mappings are logged and skipped (used at startup),
+    so one mistake doesn't disable the other buttons.
+    """
+    if not isinstance(cfg, dict) or cfg.get("version") != 1:
         raise ValueError("config 'version' must be 1")
-    dev = cfg.get("device") or {}
-    if not dev.get("vendor") or not dev.get("product"):
-        raise ValueError("config 'device' needs 'vendor' and 'product'")
+    dev = cfg.get("device")
+    if dev is not None:
+        try:
+            int(dev["vendor"], 16)
+            int(dev["product"], 16)
+        except (TypeError, KeyError, ValueError):
+            raise ValueError("config 'device' needs hex 'vendor' and "
+                             "'product' IDs") from None
+    raw = cfg.get("mappings") or {}
+    if not isinstance(raw, dict):
+        raise ValueError("config 'mappings' must be an object")
     mappings = {}
-    for button, spec in (cfg.get("mappings") or {}).items():
-        # One bad mapping shouldn't disable the others: skip just that one.
+    for button, spec in raw.items():
         try:
             m = Mapping(button, spec)
             if m.action != "default":
                 mappings[code_of(button)] = m
-        except (ValueError, AttributeError) as e:
+        except ValueError as e:
+            if strict:
+                raise
             log.error("Ignoring mapping for %s: %s", button, e)
     return dev, mappings
+
+
+def load_config(path):
+    with open(path) as f:
+        cfg = json.load(f)
+    return (cfg, *parse_config(cfg, strict=False))
 
 
 # --- Devices ---------------------------------------------------------------
@@ -154,12 +198,14 @@ def pointer_devices():
     return devices
 
 
+def device_matches(dev, want):
+    return (dev.info.vendor == int(want["vendor"], 16)
+            and dev.info.product == int(want["product"], 16))
+
+
 def find_device(want):
-    vendor = int(want["vendor"], 16)
-    product = int(want["product"], 16)
     devices = pointer_devices()
-    matches = [d for d in devices
-               if d.info.vendor == vendor and d.info.product == product]
+    matches = [d for d in devices if device_matches(d, want)]
     # Prefer an exact name match; some devices expose several nodes.
     exact = [d for d in matches if d.name == want.get("name")]
     chosen = (exact or matches or [None])[0]
@@ -174,6 +220,13 @@ def buttons_of(dev):
     return [name_of(c) for c in keys if ecodes.BTN_MISC <= c < ecodes.KEY_OK]
 
 
+def device_info(dev):
+    return {"name": dev.name,
+            "vendor": f"{dev.info.vendor:04x}",
+            "product": f"{dev.info.product:04x}",
+            "buttons": buttons_of(dev)}
+
+
 def make_virtual_device(dev):
     """A virtual device with everything the real one has, plus all mouse
     buttons and ordinary keyboard keys so any action can be sent."""
@@ -185,6 +238,383 @@ def make_virtual_device(dev):
     keys.update(range(ecodes.KEY_ESC, ecodes.KEY_MICMUTE + 1))
     caps[ecodes.EV_KEY] = sorted(keys)
     return evdev.UInput(caps, name=f"{VIRTUAL_NAME_PREFIX}: {dev.name}")
+
+
+def read_events(dev, cond):
+    """Read what's waiting on a device. Raises OSError if it's gone."""
+    if cond & (GLib.IO_HUP | GLib.IO_ERR):
+        raise OSError("device disconnected")
+    try:
+        return list(dev.read())
+    except BlockingIOError:
+        return []
+
+
+# --- Daemon ----------------------------------------------------------------
+
+def dbus_error(name, message):
+    return dbus.DBusException(message, name=f"org.ballkey.Error.{name}")
+
+
+class Daemon(dbus.service.Object):
+    """Runs the remapping and answers the settings app over D-Bus.
+
+    Everything happens in one GLib event loop: device events, plug-in
+    events and D-Bus calls each get a callback, so none blocks the others.
+    """
+
+    def __init__(self, config_path, loop):
+        self.config_path = os.path.abspath(config_path)
+        self.loop = loop
+        self.exit_code = 0
+        self.config = dict(EMPTY_CONFIG)
+        self.want = None          # device we should remap, from config
+        self.mappings = {}        # button code -> Mapping
+        self.held = {}            # mapped buttons currently held down
+        self.last_error = ""
+        self.dev = self.ui = self.dev_watch = None
+        self.waiting_logged = False
+        self.identify_main = False   # identifying on the remapped device
+        self.identify_dev = self.identify_watch = self.identify_timeout = None
+        self.load_from_disk()
+
+        # If D-Bus is unavailable, keep remapping anyway; only the
+        # settings app stops working.
+        self.system_bus = None
+        try:
+            self.system_bus = dbus.SystemBus()
+            self.bus_name = dbus.service.BusName(
+                BUS_NAME, self.system_bus, do_not_queue=True)
+            super().__init__(self.bus_name, OBJECT_PATH)
+        except dbus.DBusException as e:
+            log.error("D-Bus unavailable, the settings app won't work: %s", e)
+            super().__init__()
+
+    def guard(self, func):
+        """Wrap an event callback: an unexpected error stops the daemon
+        (releasing the device) instead of leaving it grabbed but dead."""
+        def wrapper(*args):
+            try:
+                return func(*args)
+            except Exception:
+                log.exception("Unexpected error; stopping so the device "
+                              "works normally")
+                self.exit_code = 1
+                self.loop.quit()
+                return False
+        return wrapper
+
+    # -- config --
+
+    def load_from_disk(self):
+        try:
+            cfg, want, mappings = load_config(self.config_path)
+        except FileNotFoundError:
+            log.info("No config yet (%s); waiting for settings.",
+                     self.config_path)
+            return
+        except (OSError, ValueError) as e:
+            # Fail-safe: never grab the device with a broken config.
+            self.last_error = f"Config problem: {e}"
+            log.error("Config problem in %s: %s", self.config_path, e)
+            log.error("Leaving all devices alone (they work normally) "
+                      "until new settings are saved.")
+            return
+        self.config, self.want, self.mappings = cfg, want, mappings
+        for m in mappings.values():
+            log.info("Mapping %s -> %s", m.button, m.action)
+
+    def save_config(self, cfg):
+        """Write the config atomically, so a crash never leaves half a file."""
+        folder = os.path.dirname(self.config_path)
+        os.makedirs(folder, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=folder, prefix=".config-")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(cfg, f, indent=2)
+                f.write("\n")
+            os.chmod(tmp, 0o644)
+            os.replace(tmp, self.config_path)
+        except BaseException:
+            os.unlink(tmp)
+            raise
+
+    def apply_config(self, cfg, want, mappings):
+        same_device = self.dev and want and device_matches(self.dev, want)
+        self.config, self.want, self.mappings = cfg, want, mappings
+        self.last_error = ""
+        for m in mappings.values():
+            log.info("Mapping %s -> %s", m.button, m.action)
+        if not same_device:
+            self.disconnect()
+            self.try_connect()
+
+    # -- devices --
+
+    def start(self):
+        # Start listening for plug-in events before the first search,
+        # so a device that appears in between isn't missed.
+        self.monitor = pyudev.Monitor.from_netlink(pyudev.Context())
+        self.monitor.filter_by("input")
+        self.monitor.start()
+        GLib.io_add_watch(self.monitor.fileno(), GLib.PRIORITY_DEFAULT,
+                          GLib.IO_IN, self.guard(self.on_udev))
+        GLib.timeout_add_seconds(RETRY_SECONDS, self.guard(self.on_retry))
+        self.try_connect()
+
+    def on_udev(self, fd, cond):
+        added = False
+        while (d := self.monitor.poll(timeout=0)) is not None:
+            if d.action == "add" and (d.device_node or "").startswith(
+                    "/dev/input/event"):
+                added = True
+        if added and not self.dev:
+            # Give the new device a moment to finish setting up.
+            GLib.timeout_add(500, self.guard(self.on_retry_once))
+        return True
+
+    def on_retry(self):
+        self.try_connect()
+        return True
+
+    def on_retry_once(self):
+        self.try_connect()
+        return False
+
+    def try_connect(self):
+        if self.dev or not self.want:
+            return
+        dev = find_device(self.want)
+        if not dev:
+            if not self.waiting_logged:
+                log.info("Waiting for %s to be connected...",
+                         self.want.get("name"))
+                self.waiting_logged = True
+            return
+        self.waiting_logged = False
+        log.info("Using %s (%s)", dev.name, dev.path)
+        try:
+            ui = make_virtual_device(dev)
+        except OSError as e:
+            self.last_error = f"Could not create virtual device: {e}"
+            log.error("%s (is uinput loaded?)", self.last_error)
+            dev.close()
+            return
+        try:
+            dev.grab()
+        except OSError as e:
+            self.last_error = f"Could not grab {dev.name}: {e}"
+            log.error("%s", self.last_error)
+            dev.close()
+            ui.close()
+            return
+        self.dev, self.ui = dev, ui
+        self.last_error = ""
+        self.dev_watch = GLib.io_add_watch(
+            dev.fd, GLib.PRIORITY_HIGH,
+            GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR,
+            self.guard(self.on_dev_events))
+        log.info("Remapping active.")
+
+    def on_dev_events(self, fd, cond):
+        try:
+            for event in read_events(self.dev, cond):
+                self.handle_event(event)
+        except OSError as e:
+            log.warning("Device lost (unplugged or asleep?): %s", e)
+            self.dev_watch = None   # returning False removes the watch
+            self.disconnect()
+            return False
+        return True
+
+    def handle_event(self, event):
+        if event.type == ecodes.EV_KEY:
+            if event.value == 1 and self.identify_main:
+                self.report_button(event.code)
+            # Remember which action a held button started, so it is
+            # released correctly even if settings change meanwhile.
+            if event.value == 1:
+                mapping = self.mappings.get(event.code)
+                if mapping:
+                    self.held[event.code] = mapping
+            elif event.value == 0:
+                mapping = self.held.pop(event.code, None)
+            else:
+                mapping = self.held.get(event.code)
+            if mapping:
+                mapping.handle(self.ui, event.value)
+                return
+        self.ui.write_event(event)
+
+    def disconnect(self):
+        if self.dev_watch:
+            GLib.source_remove(self.dev_watch)
+            self.dev_watch = None
+        if self.dev:
+            try:
+                self.dev.ungrab()
+            except OSError:
+                pass
+            self.dev.close()
+            self.dev = None
+        if self.ui:
+            self.ui.close()
+            self.ui = None
+        self.held.clear()
+
+    def shutdown(self):
+        self.StopIdentify()
+        self.disconnect()
+
+    # -- identify mode --
+
+    def report_button(self, code):
+        # Only mouse buttons, never keyboard keys.
+        if ecodes.BTN_MISC <= code < ecodes.KEY_OK:
+            self.ButtonPressed(name_of(code))
+
+    def on_identify_events(self, fd, cond):
+        try:
+            for event in read_events(self.identify_dev, cond):
+                if event.type == ecodes.EV_KEY and event.value == 1:
+                    self.report_button(event.code)
+        except OSError:
+            self.identify_watch = None
+            self.StopIdentify()
+            return False
+        return True
+
+    def on_identify_timeout(self):
+        self.identify_timeout = None
+        self.StopIdentify()
+        return False
+
+    # -- D-Bus API --
+
+    @dbus.service.method(INTERFACE, out_signature="s")
+    def ListDevices(self):
+        """JSON list of connected mice/trackballs with their buttons."""
+        seen, out = set(), []
+        for d in pointer_devices():
+            info = device_info(d)
+            key = (info["vendor"], info["product"], info["name"])
+            if key not in seen:
+                seen.add(key)
+                out.append(info)
+            d.close()
+        return json.dumps(out)
+
+    @dbus.service.method(INTERFACE, out_signature="s")
+    def Status(self):
+        name = self.dev.name if self.dev else (self.want or {}).get("name")
+        return json.dumps({"running": True,
+                           "configured": self.want is not None,
+                           "device_connected": self.dev is not None,
+                           "device": name,
+                           "last_error": self.last_error})
+
+    @dbus.service.method(INTERFACE, out_signature="s")
+    def GetConfig(self):
+        return json.dumps(self.config)
+
+    @dbus.service.method(INTERFACE, in_signature="s",
+                         sender_keyword="sender",
+                         async_callbacks=("ok", "err"))
+    def SetConfig(self, config_json, sender, ok, err):
+        """Check, authorize (polkit password prompt), save and apply."""
+        try:
+            cfg = json.loads(config_json)
+            want, mappings = parse_config(cfg, strict=True)
+        except (ValueError, TypeError, AttributeError) as e:
+            err(dbus_error("InvalidConfig", str(e)))
+            return
+
+        def authorized():
+            try:
+                self.save_config(cfg)
+            except OSError as e:
+                err(dbus_error("SaveFailed", str(e)))
+                return
+            log.info("New settings saved.")
+            self.apply_config(cfg, want, mappings)
+            ok()
+
+        self.check_authorization(sender, authorized, err)
+
+    def check_authorization(self, sender, on_yes, err):
+        """Ask polkit whether the caller may change settings. Polkit shows
+        the password prompt. Runs in the background so remapping
+        continues while the user types."""
+        authority = self.system_bus.get_object(
+            "org.freedesktop.PolicyKit1",
+            "/org/freedesktop/PolicyKit1/Authority", introspect=False)
+        subject = dbus.Struct(
+            ("system-bus-name",
+             dbus.Dictionary({"name": dbus.String(sender, variant_level=1)},
+                             signature="sv")),
+            signature="sa{sv}")
+
+        def reply(result):
+            if result[0]:
+                on_yes()
+            else:
+                err(dbus_error("NotAuthorized",
+                               "Not authorized to change BallKey settings"))
+
+        def failed(e):
+            log.error("polkit check failed: %s", e)
+            err(e)
+
+        authority.CheckAuthorization(
+            subject, POLKIT_ACTION, dbus.Dictionary({}, signature="ss"),
+            dbus.UInt32(1),   # 1 = allow showing a password prompt
+            "", dbus_interface="org.freedesktop.PolicyKit1.Authority",
+            reply_handler=self.guard(reply), error_handler=failed,
+            timeout=300)
+
+    @dbus.service.method(INTERFACE, in_signature="sss")
+    def StartIdentify(self, vendor, product, name):
+        """Report button presses on this device via ButtonPressed."""
+        self.StopIdentify()
+        want = {"vendor": vendor, "product": product, "name": name}
+        try:
+            int(vendor, 16)
+            int(product, 16)
+        except ValueError:
+            raise dbus_error("InvalidDevice", "vendor/product must be hex")
+        if self.dev and device_matches(self.dev, want):
+            self.identify_main = True
+        else:
+            dev = find_device(want)
+            if not dev:
+                raise dbus_error("DeviceNotFound", f"{name} is not connected")
+            # Read without grabbing: the device keeps working normally.
+            self.identify_dev = dev
+            self.identify_watch = GLib.io_add_watch(
+                dev.fd, GLib.PRIORITY_DEFAULT,
+                GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR,
+                self.guard(self.on_identify_events))
+        self.identify_timeout = GLib.timeout_add_seconds(
+            IDENTIFY_SECONDS, self.guard(self.on_identify_timeout))
+        log.info("Identify mode on for %s", name)
+
+    @dbus.service.method(INTERFACE)
+    def StopIdentify(self):
+        was_on = self.identify_main or self.identify_dev
+        if self.identify_watch:
+            GLib.source_remove(self.identify_watch)
+        if self.identify_timeout:
+            GLib.source_remove(self.identify_timeout)
+        if self.identify_dev:
+            self.identify_dev.close()
+        self.identify_main = False
+        self.identify_dev = self.identify_watch = self.identify_timeout = None
+        if was_on:
+            log.info("Identify mode off")
+
+    @dbus.service.signal(INTERFACE, signature="s")
+    def ButtonPressed(self, button):
+        pass
 
 
 # --- Commands --------------------------------------------------------------
@@ -202,8 +632,8 @@ def cmd_list():
 
 
 def cmd_watch(config_path):
-    want, _ = load_config(config_path)
-    dev = find_device(want)
+    _, want, _ = load_config(config_path)
+    dev = find_device(want) if want else None
     if not dev:
         log.error("Device not found: %s", want)
         return 1
@@ -213,77 +643,20 @@ def cmd_watch(config_path):
             print(f"  pressed: {name_of(event.code)}")
 
 
-def remap(dev, mappings):
-    """Grab one device and remap it until it disconnects."""
-    log.info("Using %s (%s)", dev.name, dev.path)
-    try:
-        ui = make_virtual_device(dev)
-    except OSError as e:
-        log.error("Could not create virtual device (is uinput loaded?): %s", e)
-        dev.close()
-        return
-    try:
-        dev.grab()
-        log.info("Remapping active.")
-        for event in dev.read_loop():
-            if event.type == ecodes.EV_KEY and event.code in mappings:
-                mappings[event.code].handle(ui, event.value)
-            else:
-                ui.write_event(event)
-    except OSError as e:
-        log.warning("Device lost (unplugged or asleep?): %s", e)
-    finally:
-        try:
-            dev.ungrab()
-        except OSError:
-            pass
-        dev.close()
-        ui.close()
-
-
-def wait_for_new_device(monitor):
-    """Return when any input device is plugged in, or after RETRY_SECONDS."""
-    deadline = time.monotonic() + RETRY_SECONDS
-    while (left := deadline - time.monotonic()) > 0:
-        d = monitor.poll(timeout=left)
-        if d is None:
-            return
-        if d.action == "add" and (d.device_node or "").startswith(
-                "/dev/input/event"):
-            time.sleep(0.5)  # let the new device finish setting up
-            return
-
-
 def cmd_run(config_path):
+    DBusGMainLoop(set_as_default=True)
+    loop = GLib.MainLoop()
+    daemon = Daemon(config_path, loop)
+    # "systemctl stop" (SIGTERM) and Ctrl+C both end the loop cleanly.
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal_add(GLib.PRIORITY_HIGH, sig, loop.quit)
+    daemon.start()
     try:
-        want, mappings = load_config(config_path)
-    except (OSError, ValueError) as e:
-        # Fail-safe: never grab the device with a broken config.
-        log.error("Config problem in %s: %s", config_path, e)
-        log.error("Leaving all devices alone (they work normally). "
-                  "Fix the config, then restart the service.")
-        while True:
-            signal.pause()
-
-    for m in mappings.values():
-        log.info("Mapping %s -> %s", m.button, m.action)
-
-    # Start listening for plug-in events before the first search,
-    # so a device that appears in between isn't missed.
-    monitor = pyudev.Monitor.from_netlink(pyudev.Context())
-    monitor.filter_by("input")
-    monitor.start()
-
-    waiting_logged = False
-    while True:
-        dev = find_device(want)
-        if dev:
-            remap(dev, mappings)
-            waiting_logged = False
-        elif not waiting_logged:
-            log.info("Waiting for %s to be connected...", want.get("name"))
-            waiting_logged = True
-        wait_for_new_device(monitor)
+        loop.run()
+    finally:
+        daemon.shutdown()
+        log.info("Stopped. Device is back to normal.")
+    return daemon.exit_code
 
 
 def main():
@@ -298,7 +671,6 @@ def main():
                        help="print button names as you press them")
     args = parser.parse_args()
 
-    # Treat "systemctl stop" (SIGTERM) like Ctrl+C so cleanup runs.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 
     try:
@@ -308,7 +680,6 @@ def main():
             return cmd_watch(args.config)
         return cmd_run(args.config)
     except KeyboardInterrupt:
-        log.info("Stopped. Device is back to normal.")
         return 0
     except (OSError, ValueError) as e:
         log.error("%s", e)

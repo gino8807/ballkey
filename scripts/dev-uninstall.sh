@@ -10,7 +10,10 @@ fi
 systemctl disable --now ballkey.service 2>/dev/null
 rm -f /etc/systemd/system/ballkey.service
 rm -f /etc/modules-load.d/ballkey-uinput.conf
+rm -f /usr/share/dbus-1/system.d/org.ballkey.Daemon.conf
+rm -f /usr/share/polkit-1/actions/org.ballkey.policy
 rm -rf /usr/lib/ballkey /etc/ballkey
+systemctl reload dbus
 systemctl daemon-reload
 systemctl reset-failed ballkey.service 2>/dev/null
 
