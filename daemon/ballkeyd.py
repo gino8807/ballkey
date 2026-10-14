@@ -8,9 +8,13 @@ How it works:
   4. Copy every event from the real device to the virtual one, except
      mapped buttons, which are replaced by their assigned action.
 
-If this program stops for any reason (Ctrl+C, crash, killed), the kernel
-releases the grab and removes the virtual device, so the real device
-goes back to working normally.
+When the device is unplugged (or goes to sleep), the daemon waits and
+grabs it again as soon as it comes back.
+
+Fail-safe: if this program stops for any reason (Ctrl+C, crash, killed),
+the kernel releases the grab and removes the virtual device, so the real
+device goes back to working normally. If the config file is broken, the
+daemon never grabs the device at all.
 
 Usage (needs root):
   ballkeyd.py --list                 show connected mice/trackballs
@@ -23,12 +27,16 @@ import json
 import logging
 import signal
 import sys
+import time
 
 import evdev
+import pyudev
 from evdev import ecodes
 
 DEFAULT_CONFIG = "/etc/ballkey/config.json"
 VIRTUAL_NAME_PREFIX = "BallKey"
+# How often to look for the device even if no plug-in event arrives.
+RETRY_SECONDS = 10
 
 log = logging.getLogger("ballkey")
 
@@ -113,9 +121,13 @@ def load_config(path):
         raise ValueError("config 'device' needs 'vendor' and 'product'")
     mappings = {}
     for button, spec in (cfg.get("mappings") or {}).items():
-        m = Mapping(button, spec)
-        if m.action != "default":
-            mappings[code_of(button)] = m
+        # One bad mapping shouldn't disable the others: skip just that one.
+        try:
+            m = Mapping(button, spec)
+            if m.action != "default":
+                mappings[code_of(button)] = m
+        except (ValueError, AttributeError) as e:
+            log.error("Ignoring mapping for %s: %s", button, e)
     return dev, mappings
 
 
@@ -145,13 +157,16 @@ def pointer_devices():
 def find_device(want):
     vendor = int(want["vendor"], 16)
     product = int(want["product"], 16)
-    matches = [d for d in pointer_devices()
+    devices = pointer_devices()
+    matches = [d for d in devices
                if d.info.vendor == vendor and d.info.product == product]
     # Prefer an exact name match; some devices expose several nodes.
-    for d in matches:
-        if d.name == want.get("name"):
-            return d
-    return matches[0] if matches else None
+    exact = [d for d in matches if d.name == want.get("name")]
+    chosen = (exact or matches or [None])[0]
+    for d in devices:
+        if d is not chosen:
+            d.close()
+    return chosen
 
 
 def buttons_of(dev):
@@ -198,35 +213,77 @@ def cmd_watch(config_path):
             print(f"  pressed: {name_of(event.code)}")
 
 
-def cmd_run(config_path):
-    want, mappings = load_config(config_path)
-    dev = find_device(want)
-    if not dev:
-        log.error("Device not found: %s", want)
-        return 1
+def remap(dev, mappings):
+    """Grab one device and remap it until it disconnects."""
     log.info("Using %s (%s)", dev.name, dev.path)
-    for m in mappings.values():
-        log.info("  %s -> %s", m.button, m.action)
-
-    ui = make_virtual_device(dev)
-    dev.grab()
-    log.info("Remapping active. Press Ctrl+C to stop.")
     try:
+        ui = make_virtual_device(dev)
+    except OSError as e:
+        log.error("Could not create virtual device (is uinput loaded?): %s", e)
+        dev.close()
+        return
+    try:
+        dev.grab()
+        log.info("Remapping active.")
         for event in dev.read_loop():
             if event.type == ecodes.EV_KEY and event.code in mappings:
                 mappings[event.code].handle(ui, event.value)
             else:
                 ui.write_event(event)
     except OSError as e:
-        log.error("Lost the device (unplugged?): %s", e)
-        return 1
+        log.warning("Device lost (unplugged or asleep?): %s", e)
     finally:
         try:
             dev.ungrab()
         except OSError:
             pass
+        dev.close()
         ui.close()
-        log.info("Stopped. Device is back to normal.")
+
+
+def wait_for_new_device(monitor):
+    """Return when any input device is plugged in, or after RETRY_SECONDS."""
+    deadline = time.monotonic() + RETRY_SECONDS
+    while (left := deadline - time.monotonic()) > 0:
+        d = monitor.poll(timeout=left)
+        if d is None:
+            return
+        if d.action == "add" and (d.device_node or "").startswith(
+                "/dev/input/event"):
+            time.sleep(0.5)  # let the new device finish setting up
+            return
+
+
+def cmd_run(config_path):
+    try:
+        want, mappings = load_config(config_path)
+    except (OSError, ValueError) as e:
+        # Fail-safe: never grab the device with a broken config.
+        log.error("Config problem in %s: %s", config_path, e)
+        log.error("Leaving all devices alone (they work normally). "
+                  "Fix the config, then restart the service.")
+        while True:
+            signal.pause()
+
+    for m in mappings.values():
+        log.info("Mapping %s -> %s", m.button, m.action)
+
+    # Start listening for plug-in events before the first search,
+    # so a device that appears in between isn't missed.
+    monitor = pyudev.Monitor.from_netlink(pyudev.Context())
+    monitor.filter_by("input")
+    monitor.start()
+
+    waiting_logged = False
+    while True:
+        dev = find_device(want)
+        if dev:
+            remap(dev, mappings)
+            waiting_logged = False
+        elif not waiting_logged:
+            log.info("Waiting for %s to be connected...", want.get("name"))
+            waiting_logged = True
+        wait_for_new_device(monitor)
 
 
 def main():
@@ -251,6 +308,7 @@ def main():
             return cmd_watch(args.config)
         return cmd_run(args.config)
     except KeyboardInterrupt:
+        log.info("Stopped. Device is back to normal.")
         return 0
     except (OSError, ValueError) as e:
         log.error("%s", e)

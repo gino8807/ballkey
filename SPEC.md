@@ -92,6 +92,8 @@ A simple graphical button remapper for any mouse or trackball on Linux, inspired
 
 ## Phases
 
+**Order changed (2026-10-14):** after Phase 2, do Phase 4 (D-Bus + polkit) and Phase 5 (GUI) before Phase 3 (packaging), so the first package includes the app.
+
 **Phase 1: Remap engine.** Daemon script that reads a hand-written config, grabs the device, and remaps one button. Run it manually to test. ✅ when: a side button on the trackball does "back" in Firefox, everything else works normally, and stopping the script returns the device to normal.
 
 **Phase 2: Boot and hotplug.** systemd service, `uinput` autoload, pyudev reconnect handling, fail-safe passthrough. ✅ when: mapping works after a reboot with no action from me, and survives unplug/replug.
