@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "device": { "vendor": "046d", "product": "c08f", "name": "Logitech G403 HERO Gaming Mouse" },
+  "mappings": {
+    "BTN_MIDDLE": { "action": "back" }
+  }
+}
