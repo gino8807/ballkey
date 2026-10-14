@@ -361,9 +361,15 @@ class MainWindow(QWidget):
         self.device_box = QComboBox()
         self.device_box.setPlaceholderText("No mouse or trackball found")
         self.device_box.currentIndexChanged.connect(self.on_device_chosen)
+        self.forget_button = QPushButton("Forget")
+        self.forget_button.setToolTip(
+            "Remove this device and its button settings from BallKey "
+            "(for example a mouse you no longer have)")
+        self.forget_button.clicked.connect(self.forget_device)
         top = QHBoxLayout()
         top.addWidget(QLabel("Device:"))
         top.addWidget(self.device_box, 1)
+        top.addWidget(self.forget_button)
 
         self.table = QTableWidget(0, 2)
         self.table.setHorizontalHeaderLabels(["Button", "Action"])
@@ -557,6 +563,11 @@ class MainWindow(QWidget):
         self.defaults_button.setEnabled(ok)
         self.identify_button.setEnabled(ok and dev["connected"])
         self.apply_button.setEnabled(ok and self.has_changes())
+        self.forget_button.setEnabled(ok and self.is_saved_device(dev))
+
+    def is_saved_device(self, dev):
+        saved = (self.saved_config or {}).get("device")
+        return bool(dev and saved and device_key(dev) == device_key(saved))
 
     def restore_defaults(self):
         for row in range(self.table.rowCount()):
@@ -639,6 +650,31 @@ class MainWindow(QWidget):
 
         self.client.set_config(old, done)
 
+    def forget_device(self):
+        dev = self.current_device()
+        answer = QMessageBox.question(
+            self, "Forget device?",
+            f"Forget <b>{dev['name']}</b>?<br><br>Its button settings will "
+            "be removed and it will behave normally. You can set it up "
+            "again any time while it's connected.")
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        self.stop_identify()
+        new = {"version": 1, "device": None, "mappings": {}}
+        self.set_busy(True, "Saving… (a password prompt may appear)")
+
+        def done(error_name, error_message):
+            self.set_busy(False)
+            if error_name:
+                self.show_save_error(error_name, error_message)
+                return
+            self.saved_config = new
+            self.load()
+            self.on_device_chosen()   # show the rows without its settings
+            self.hint.setText(f"Forgot {dev['name']}.")
+
+        self.client.set_config(new, done)
+
     def toggle_boot(self, enabled):
         self.set_busy(True, "Saving… (a password prompt may appear)")
 
@@ -665,7 +701,8 @@ class MainWindow(QWidget):
 
     def set_busy(self, busy, text=""):
         for w in (self.device_box, self.table, self.identify_button,
-                  self.defaults_button, self.apply_button, self.boot_box):
+                  self.defaults_button, self.apply_button, self.boot_box,
+                  self.forget_button):
             w.setEnabled(not busy)
         if busy:
             self.hint.setText(text)

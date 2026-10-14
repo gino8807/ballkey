@@ -69,6 +69,10 @@ The list shows the common buttons; extra buttons appear when you use
 **Identify button** on them. **Restore defaults** sets every button back
 to normal (click **Apply** to save).
 
+**Forget** (next to the device list) removes the device BallKey has set
+up, together with its button settings. Use it for a mouse you no longer
+have; it shows as "(not connected)" in the list.
+
 ## Uninstall
 
 Remove the `ballkey` package (Discover/Software, `sudo dnf remove ballkey`,
