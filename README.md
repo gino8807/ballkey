@@ -45,6 +45,10 @@ You can also install straight from it:
 `sudo dnf copr enable gino8807/ballkey && sudo dnf install ballkey`.
 On Debian, Ubuntu and Arch, download and install new versions by hand for now.
 
+**Older versions** (back to 0.1.0) are on the
+[Releases page](https://github.com/gino8807/ballkey/releases), in case
+you need one.
+
 Everything else BallKey needs is installed automatically from your
 distribution's own repositories. Ubuntu 24.04 isn't supported (it has no
 PySide6 package).
