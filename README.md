@@ -57,9 +57,19 @@ PySide6 package).
    Click **Identify button** and press it: its row is highlighted.
 4. Click **Apply** and enter your password.
 
-Actions: Left / Right / Middle click, Double-click, Back, Forward, Copy,
-Paste, Undo, Do nothing, Default (normal behaviour), and **Custom key
-combo…**, where you simply press the keys you want:
+Actions:
+
+- **Clicks:** Left / Right / Middle click, Double left / right / middle
+  click, and Left / Right / Middle **drag**: press once to hold the
+  button down, move, then press again (or click normally) to let go.
+- **Browsing:** Back, Forward.
+- **Editing:** Undo, Redo, Cut, Copy, Paste, Select all, Find.
+- **Media:** Play / pause, Stop, Next track, Previous track, Volume up,
+  Volume down, Microphone on/off.
+- **Keyboard key or combo…:** simply press the key or keys you want.
+  Keys you can't press (not on your keyboard, or caught by the desktop)
+  can be picked from a list in the same window.
+- Do nothing, and Default (normal behaviour).
 
 ![Recording a key combo](docs/screenshots/key-combo.png)
 
@@ -68,13 +78,20 @@ your previous settings come back:
 
 ![Keep these settings?](docs/screenshots/keep-settings.png)
 
+**Button combinations**: under the button list, click **Add
+combination…**, tick two or more buttons, and choose what pressing them
+*together* does. For example, on a mouse without a scroll wheel, set
+**Left + Right** to **Middle click**. The buttons in a combination still
+work on their own; they just react a few milliseconds later, while
+BallKey waits to see whether you're pressing the other ones too.
+
 **Start remapping at boot** (on by default): untick it if you don't want
 your buttons changed after a restart. Opening BallKey turns remapping
 back on for that session.
 
 The list shows the common buttons; extra buttons appear when you use
 **Identify button** on them. **Restore defaults** sets every button back
-to normal (click **Apply** to save).
+to normal and removes all combinations (click **Apply** to save).
 
 **Forget** (next to the device list) removes the device BallKey has set
 up, together with its button settings. Use it for a mouse you no longer

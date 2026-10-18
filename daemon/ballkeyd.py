@@ -58,6 +58,9 @@ VIRTUAL_NAME_PREFIX = "BallKey"
 RETRY_SECONDS = 10
 # Identify mode switches itself off after this long.
 IDENTIFY_SECONDS = 60
+# Buttons pressed within this many milliseconds of each other count as
+# pressed together (for button combinations). Same as libinput uses.
+CHORD_MS = 50
 
 BUS_NAME = "org.ballkey.Daemon"
 OBJECT_PATH = "/org/ballkey/Daemon"
@@ -65,7 +68,8 @@ INTERFACE = "org.ballkey.Daemon"
 POLKIT_ACTION = "org.ballkey.configure"
 SERVICE_UNIT = "ballkey.service"
 
-EMPTY_CONFIG = {"version": 1, "device": None, "mappings": {}}
+EMPTY_CONFIG = {"version": 1, "device": None, "mappings": {},
+                "chords": []}
 
 log = logging.getLogger("ballkey")
 
@@ -80,11 +84,35 @@ SIMPLE_ACTIONS = {
     "middle": ["BTN_MIDDLE"],
     "back": ["BTN_SIDE"],
     "forward": ["BTN_EXTRA"],
+    "undo": ["KEY_LEFTCTRL", "KEY_Z"],
+    "redo": ["KEY_LEFTCTRL", "KEY_LEFTSHIFT", "KEY_Z"],
+    "cut": ["KEY_LEFTCTRL", "KEY_X"],
     "copy": ["KEY_LEFTCTRL", "KEY_C"],
     "paste": ["KEY_LEFTCTRL", "KEY_V"],
-    "undo": ["KEY_LEFTCTRL", "KEY_Z"],
+    "selectall": ["KEY_LEFTCTRL", "KEY_A"],
+    "find": ["KEY_LEFTCTRL", "KEY_F"],
+    "micmute": ["KEY_MICMUTE"],
+    "volumeup": ["KEY_VOLUMEUP"],
+    "volumedown": ["KEY_VOLUMEDOWN"],
+    "playpause": ["KEY_PLAYPAUSE"],
+    "stop": ["KEY_STOPCD"],
+    "nexttrack": ["KEY_NEXTSONG"],
+    "previoustrack": ["KEY_PREVIOUSSONG"],
 }
-OTHER_ACTIONS = {"doubleclick", "keycombo", "none", "default"}
+# One press clicks this button twice.
+DOUBLE_CLICKS = {
+    "doubleclick": "BTN_LEFT",
+    "doubleright": "BTN_RIGHT",
+    "doublemiddle": "BTN_MIDDLE",
+}
+# Drag lock: one press holds this button down, the next press lets go.
+# Pressing the real button also lets go.
+DRAGS = {
+    "dragleft": "BTN_LEFT",
+    "dragright": "BTN_RIGHT",
+    "dragmiddle": "BTN_MIDDLE",
+}
+OTHER_ACTIONS = {"keycombo", "none", "default"}
 
 
 def code_of(name):
@@ -112,6 +140,10 @@ class Mapping:
         self.action = spec.get("action")
         if self.action in SIMPLE_ACTIONS:
             self.codes = [code_of(n) for n in SIMPLE_ACTIONS[self.action]]
+        elif self.action in DOUBLE_CLICKS:
+            self.codes = [code_of(DOUBLE_CLICKS[self.action])]
+        elif self.action in DRAGS:
+            self.codes = [code_of(DRAGS[self.action])]
         elif self.action == "keycombo":
             keys = spec.get("keys")
             if not isinstance(keys, list) or not keys:
@@ -122,28 +154,63 @@ class Mapping:
         else:
             raise ValueError(f"{button}: unknown action {self.action!r}")
 
-    def handle(self, ui, value):
-        """Run the action. value: 1 = pressed, 0 = released, 2 = auto-repeat."""
+    def handle(self, ui, value, locked):
+        """Run the action. value: 1 = pressed, 0 = released, 2 = auto-repeat.
+        locked: buttons a drag action is holding down (shared by all
+        mappings, so any release of that button ends the drag)."""
         if value == 2 or self.action == "none":
             return
-        if self.action == "doubleclick":
+        if self.action in DOUBLE_CLICKS:
             if value == 1:
                 for _ in range(2):
-                    ui.write(ecodes.EV_KEY, ecodes.BTN_LEFT, 1)
+                    ui.write(ecodes.EV_KEY, self.codes[0], 1)
                     ui.syn()
-                    ui.write(ecodes.EV_KEY, ecodes.BTN_LEFT, 0)
+                    ui.write(ecodes.EV_KEY, self.codes[0], 0)
                     ui.syn()
+                locked.discard(self.codes[0])
+            return
+        if self.action in DRAGS:
+            if value == 1:
+                code = self.codes[0]
+                if code in locked:
+                    locked.discard(code)
+                    ui.write(ecodes.EV_KEY, code, 0)
+                else:
+                    locked.add(code)
+                    ui.write(ecodes.EV_KEY, code, 1)
             return
         # Press in order, release in reverse order (like a person would).
         for code in (self.codes if value == 1 else reversed(self.codes)):
             ui.write(ecodes.EV_KEY, code, value)
+            if value == 0:
+                locked.discard(code)
         # The real device's own SYN_REPORT follows and finishes the frame.
+
+
+class Chord:
+    """Several buttons pressed together, which do their own action
+    (e.g. Left + Right together = Middle click)."""
+
+    def __init__(self, spec):
+        if not isinstance(spec, dict):
+            raise ValueError("combination must be an object")
+        names = spec.get("buttons")
+        if not isinstance(names, list) or len(set(names)) < 2:
+            raise ValueError("combination needs at least two different "
+                             "'buttons'")
+        self.names = sorted(set(names))
+        self.label = " + ".join(self.names)
+        self.buttons = frozenset(code_of(n) for n in self.names)
+        if spec.get("action") == "default":
+            raise ValueError(f"{self.label}: combination can't be 'default'")
+        self.mapping = Mapping(self.label, spec)
 
 
 # --- Config ----------------------------------------------------------------
 
 def parse_config(cfg, strict):
-    """Check a config. Returns (device, mappings); device may be None.
+    """Check a config. Returns (device, mappings, chords); device may be
+    None.
 
     strict=True: any bad mapping is an error (used when the app saves).
     strict=False: bad mappings are logged and skipped (used at startup),
@@ -172,7 +239,21 @@ def parse_config(cfg, strict):
             if strict:
                 raise
             log.error("Ignoring mapping for %s: %s", button, e)
-    return dev, mappings
+    raw = cfg.get("chords") or []
+    if not isinstance(raw, list):
+        raise ValueError("config 'chords' must be a list")
+    chords = []
+    for spec in raw:
+        try:
+            chord = Chord(spec)
+            if any(c.buttons == chord.buttons for c in chords):
+                raise ValueError(f"{chord.label}: combination listed twice")
+            chords.append(chord)
+        except ValueError as e:
+            if strict:
+                raise
+            log.error("Ignoring button combination: %s", e)
+    return dev, mappings, chords
 
 
 def load_config(path):
@@ -277,6 +358,14 @@ class Daemon(dbus.service.Object):
         self.want = None          # device we should remap, from config
         self.mappings = {}        # button code -> Mapping
         self.held = {}            # mapped buttons currently held down
+        self.locked = set()       # buttons held down by a drag action
+        self.chords = []          # button combinations (Chord)
+        # Combination buttons just pressed, held back for CHORD_MS to see
+        # whether the rest of a combination follows.
+        self.pending = []
+        self.pending_timer = None
+        self.active_chord = None  # combination currently held down
+        self.chord_down = set()   # its buttons that are still down
         self.last_error = ""
         self.dev = self.ui = self.dev_watch = None
         self.waiting_logged = False
@@ -314,7 +403,7 @@ class Daemon(dbus.service.Object):
 
     def load_from_disk(self):
         try:
-            cfg, want, mappings = load_config(self.config_path)
+            cfg, want, mappings, chords = load_config(self.config_path)
         except FileNotFoundError:
             log.info("No config yet (%s); waiting for settings.",
                      self.config_path)
@@ -326,9 +415,15 @@ class Daemon(dbus.service.Object):
             log.error("Leaving all devices alone (they work normally) "
                       "until new settings are saved.")
             return
-        self.config, self.want, self.mappings = cfg, want, mappings
-        for m in mappings.values():
+        self.config, self.want = cfg, want
+        self.mappings, self.chords = mappings, chords
+        self.log_mappings()
+
+    def log_mappings(self):
+        for m in self.mappings.values():
             log.info("Mapping %s -> %s", m.button, m.action)
+        for c in self.chords:
+            log.info("Combination %s -> %s", c.label, c.mapping.action)
 
     def save_config(self, cfg):
         """Write the config atomically, so a crash never leaves half a file."""
@@ -345,15 +440,25 @@ class Daemon(dbus.service.Object):
             os.unlink(tmp)
             raise
 
-    def apply_config(self, cfg, want, mappings):
+    def apply_config(self, cfg, want, mappings, chords):
         same_device = self.dev and want and device_matches(self.dev, want)
-        self.config, self.want, self.mappings = cfg, want, mappings
+        self.config, self.want = cfg, want
+        self.mappings, self.chords = mappings, chords
         self.last_error = ""
-        for m in mappings.values():
-            log.info("Mapping %s -> %s", m.button, m.action)
+        self.log_mappings()
+        self.release_drags()
         if not same_device:
             self.disconnect()
             self.try_connect()
+
+    def release_drags(self):
+        """Let go of buttons a drag action is holding, so new settings
+        never leave a button stuck down."""
+        if self.ui and self.locked:
+            for code in self.locked:
+                self.ui.write(ecodes.EV_KEY, code, 0)
+            self.ui.syn()
+        self.locked.clear()
 
     # -- devices --
 
@@ -434,23 +539,107 @@ class Daemon(dbus.service.Object):
         return True
 
     def handle_event(self, event):
-        if event.type == ecodes.EV_KEY:
-            if event.value == 1 and self.identify_main:
-                self.report_button(event.code)
-            # Remember which action a held button started, so it is
-            # released correctly even if settings change meanwhile.
-            if event.value == 1:
-                mapping = self.mappings.get(event.code)
-                if mapping:
-                    self.held[event.code] = mapping
-            elif event.value == 0:
-                mapping = self.held.pop(event.code, None)
-            else:
-                mapping = self.held.get(event.code)
+        if event.type != ecodes.EV_KEY:
+            self.ui.write_event(event)
+            return
+        code, value = event.code, event.value
+        if value == 1 and self.identify_main:
+            self.report_button(code)
+        if self.active_chord and code in self.active_chord.buttons:
+            self.chord_button(code, value)
+        elif code in self.pending:
+            if value == 0:
+                # Let go before a combination formed: an ordinary click.
+                self.flush_pending()
+                self.button(code, 0)
+        elif value == 1 and not self.active_chord and any(
+                code in c.buttons for c in self.chords):
+            self.hold_back(code)
+        else:
+            self.button(code, value)
+
+    def button(self, code, value):
+        """A button press or release, with its mapping if it has one."""
+        # Remember which action a held button started, so it is
+        # released correctly even if settings change meanwhile.
+        if value == 1:
+            mapping = self.mappings.get(code)
             if mapping:
-                mapping.handle(self.ui, event.value)
-                return
-        self.ui.write_event(event)
+                self.held[code] = mapping
+        elif value == 0:
+            mapping = self.held.pop(code, None)
+        else:
+            mapping = self.held.get(code)
+        if mapping:
+            mapping.handle(self.ui, value, self.locked)
+        else:
+            self.ui.write(ecodes.EV_KEY, code, value)
+            if value == 0:
+                self.locked.discard(code)
+
+    # -- button combinations --
+    # A button that is part of a combination isn't passed on straight
+    # away: it waits up to CHORD_MS for the other buttons. If they come,
+    # the combination's action runs instead; if not, the button acts
+    # normally (just a few milliseconds late).
+
+    def hold_back(self, code):
+        self.pending.append(code)
+        down = set(self.pending)
+        possible = [c for c in self.chords if down <= c.buttons]
+        if not possible:
+            # These buttons can't become a combination any more.
+            self.flush_pending()
+        elif [c.buttons for c in possible] == [down]:
+            # Exactly one combination, and it's complete.
+            self.start_chord(possible[0])
+        elif not self.pending_timer:
+            self.pending_timer = GLib.timeout_add(
+                CHORD_MS, self.guard(self.on_pending_timeout))
+
+    def on_pending_timeout(self):
+        self.pending_timer = None
+        down = set(self.pending)
+        chord = next((c for c in self.chords if c.buttons == down), None)
+        if chord:
+            self.start_chord(chord)
+        else:
+            self.flush_pending()
+        return False
+
+    def start_chord(self, chord):
+        self.cancel_pending_timer()
+        self.active_chord = chord
+        self.chord_down = set(self.pending)
+        self.pending = []
+        log.debug("Combination %s", chord.label)
+        chord.mapping.handle(self.ui, 1, self.locked)
+        self.ui.syn()
+
+    def chord_button(self, code, value):
+        """A button of the held combination. Its action ends when all of
+        its buttons have been let go."""
+        if value == 1:
+            self.chord_down.add(code)
+        elif value == 0:
+            self.chord_down.discard(code)
+            if not self.chord_down:
+                self.active_chord.mapping.handle(self.ui, 0, self.locked)
+                self.ui.syn()
+                self.active_chord = None
+
+    def flush_pending(self):
+        """Send held-back presses as ordinary presses."""
+        self.cancel_pending_timer()
+        pending, self.pending = self.pending, []
+        for code in pending:
+            self.button(code, 1)
+        self.ui.syn()
+
+    def cancel_pending_timer(self):
+        if self.pending_timer:
+            GLib.source_remove(self.pending_timer)
+            self.pending_timer = None
 
     def disconnect(self):
         if self.dev_watch:
@@ -467,6 +656,11 @@ class Daemon(dbus.service.Object):
             self.ui.close()
             self.ui = None
         self.held.clear()
+        self.locked.clear()
+        self.cancel_pending_timer()
+        self.pending = []
+        self.active_chord = None
+        self.chord_down = set()
 
     def shutdown(self):
         self.StopIdentify()
@@ -530,7 +724,7 @@ class Daemon(dbus.service.Object):
         """Check, authorize (polkit password prompt), save and apply."""
         try:
             cfg = json.loads(config_json)
-            want, mappings = parse_config(cfg, strict=True)
+            want, mappings, chords = parse_config(cfg, strict=True)
         except (ValueError, TypeError, AttributeError) as e:
             err(dbus_error("InvalidConfig", str(e)))
             return
@@ -542,7 +736,7 @@ class Daemon(dbus.service.Object):
                 err(dbus_error("SaveFailed", str(e)))
                 return
             log.info("New settings saved.")
-            self.apply_config(cfg, want, mappings)
+            self.apply_config(cfg, want, mappings, chords)
             ok()
 
         self.check_authorization(sender, authorized, err)
@@ -684,7 +878,7 @@ def cmd_list():
 
 
 def cmd_watch(config_path):
-    _, want, _ = load_config(config_path)
+    _, want, _, _ = load_config(config_path)
     dev = find_device(want) if want else None
     if not dev:
         log.error("Device not found: %s", want)

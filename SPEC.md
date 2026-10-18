@@ -6,7 +6,7 @@ Working name: **BallKey** (rename anytime).
 
 A simple graphical button remapper for any mouse or trackball on Linux, inspired by Kensington Works. The user installs one package, opens the app once, assigns actions to buttons, clicks Apply, and never has to open it again. Mappings apply automatically at every boot and whenever the device is reconnected.
 
-**Not in scope for v1:** per-app profiles, chording, scroll/pointer speed, multiple presets. Keep it simple.
+**Not in scope for v1:** per-app profiles, scroll/pointer speed, multiple presets. Keep it simple.
 
 ## About me (read this first, Claude Code)
 
@@ -68,6 +68,13 @@ A simple graphical button remapper for any mouse or trackball on Linux, inspired
 - Do nothing (disable the button)
 - Default (button behaves normally)
 
+**More actions** (added 2026-10-18): Redo (Ctrl+Shift+Z), Cut, Select
+all, Find; double right/middle click; left/right/middle drag lock (one
+press holds the button, the next press or a real click of that button
+lets go; changing settings also lets go); media keys (play/pause, stop,
+next/previous track, volume up/down, mic mute). The key combo dialog can
+also pick any key from Esc to Mic mute from a list.
+
 ## Config file example
 
 ```json
@@ -77,9 +84,18 @@ A simple graphical button remapper for any mouse or trackball on Linux, inspired
   "mappings": {
     "BTN_SIDE": { "action": "back" },
     "BTN_EXTRA": { "action": "keycombo", "keys": ["KEY_LEFTCTRL", "KEY_C"] }
-  }
+  },
+  "chords": [
+    { "buttons": ["BTN_LEFT", "BTN_RIGHT"], "action": "middle" }
+  ]
 }
 ```
+
+**Button combinations (chords)** were added after v1 (2026-10-16): two or
+more buttons pressed within 50 ms of each other run the combination's
+action (any action except Default) instead of their own. The action is
+held until all of the combination's buttons are released. A button that
+is part of a combination waits up to 50 ms before acting normally.
 
 (The IDs above are illustrative; read the real ones from the device.)
 
@@ -108,4 +124,4 @@ A simple graphical button remapper for any mouse or trackball on Linux, inspired
 
 ## Later ideas (not v1)
 
-Chording, scroll and pointer speed, slow-pointer precision toggle, text snippets, launch-an-app action, per-app profiles, Fedora COPR repo, AUR entry.
+Scroll and pointer speed, slow-pointer precision toggle, text snippets, launch-an-app action, per-app profiles, Fedora COPR repo, AUR entry.

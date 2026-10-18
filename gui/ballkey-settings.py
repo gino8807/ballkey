@@ -7,6 +7,10 @@ Runs as the normal user and never touches /dev/input itself; everything
 goes through the BallKey daemon over the system D-Bus. Saving shows the
 system password prompt (polkit).
 
+Button combinations: pressing several buttons together can do their own
+action, e.g. Left + Right together = Middle click (for a mouse without a
+wheel).
+
 Safety: if the new settings leave no button doing a left click, a
 countdown asks "Keep these settings?" and reverts after 15 seconds
 unless confirmed (like changing display resolution).
@@ -45,23 +49,51 @@ BUTTON_LABELS = {
     "BTN_BACK": "Back button",
     "BTN_TASK": "Task button",
 }
+# Shorter names, for showing combinations like "Left + Right".
+BUTTON_SHORT_LABELS = {
+    "BTN_LEFT": "Left", "BTN_RIGHT": "Right", "BTN_MIDDLE": "Middle",
+    "BTN_SIDE": "Side (Back)", "BTN_EXTRA": "Side (Forward)",
+    "BTN_FORWARD": "Forward", "BTN_BACK": "Back", "BTN_TASK": "Task",
+}
 
+KEYCOMBO_LABEL = "Keyboard key or combo…"
+DRAG_TIP = ("Press once to hold the button down, move, then press again "
+            "to let go")
 # (action id, label) in dropdown order.
 ACTIONS = [
     ("default", "Default (normal behaviour)"),
     ("left", "Left click"),
     ("right", "Right click"),
     ("middle", "Middle click"),
-    ("doubleclick", "Double-click"),
+    ("doubleclick", "Double left click"),
+    ("doubleright", "Double right click"),
+    ("doublemiddle", "Double middle click"),
+    ("dragleft", "Left drag"),
+    ("dragright", "Right drag"),
+    ("dragmiddle", "Middle drag"),
     ("back", "Back"),
     ("forward", "Forward"),
+    ("undo", "Undo"),
+    ("redo", "Redo"),
+    ("cut", "Cut"),
     ("copy", "Copy"),
     ("paste", "Paste"),
-    ("undo", "Undo"),
-    ("keycombo", "Custom key combo…"),
+    ("selectall", "Select all"),
+    ("find", "Find"),
+    ("playpause", "Play / pause"),
+    ("stop", "Stop"),
+    ("nexttrack", "Next track"),
+    ("previoustrack", "Previous track"),
+    ("volumeup", "Volume up"),
+    ("volumedown", "Volume down"),
+    ("micmute", "Microphone on/off"),
+    ("keycombo", KEYCOMBO_LABEL),
     ("none", "Do nothing"),
 ]
-KEYCOMBO_INDEX = [a for a, _ in ACTIONS].index("keycombo")
+ACTION_TIPS = {"dragleft": DRAG_TIP, "dragright": DRAG_TIP,
+               "dragmiddle": DRAG_TIP}
+# A combination always does something, so no "Default" for it.
+CHORD_ACTIONS = ACTIONS[1:]
 
 MODIFIER_ORDER = ["KEY_LEFTCTRL", "KEY_RIGHTCTRL", "KEY_LEFTSHIFT",
                   "KEY_RIGHTSHIFT", "KEY_LEFTALT", "KEY_RIGHTALT",
@@ -78,6 +110,11 @@ def button_label(name):
     return BUTTON_LABELS.get(name, f"Extra button ({name})")
 
 
+def chord_label(buttons):
+    return " + ".join(BUTTON_SHORT_LABELS.get(b, b.removeprefix("BTN_"))
+                      for b in buttons)
+
+
 def key_label(name):
     if name in KEY_LABELS:
         return KEY_LABELS[name]
@@ -90,8 +127,22 @@ def combo_label(keys):
 
 
 def evdev_key_name(code):
+    """Key name for a kernel key code, or None if BallKey can't send it
+    (the daemon's virtual device has the keys from Esc to Mic mute)."""
+    if not ecodes.KEY_ESC <= code <= ecodes.KEY_MICMUTE:
+        return None
     name = ecodes.KEY.get(code)
     return name[0] if isinstance(name, (list, tuple)) else name
+
+
+def all_keys():
+    """(label, name) of every key BallKey can send, sorted by label."""
+    keys = {}
+    for code in range(ecodes.KEY_ESC, ecodes.KEY_MICMUTE + 1):
+        name = evdev_key_name(code)
+        if name:
+            keys[name] = name.removeprefix("KEY_").replace("_", " ").title()
+    return sorted((label, name) for name, label in keys.items())
 
 
 def device_key(dev):
@@ -182,8 +233,8 @@ class KeyComboDialog(QDialog):
         self.down = set()
         self.recording = []
 
-        info = QLabel("Press the key combination you want, for example "
-                      "Ctrl+T, then let go.")
+        info = QLabel("Press the key or key combination you want, for "
+                      "example Ctrl+T, then let go.")
         info.setWordWrap(True)
         self.shown = QLabel("…")
         self.shown.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -203,6 +254,24 @@ class KeyComboDialog(QDialog):
         self.ok.clicked.connect(self.accept)
         cancel.clicked.connect(self.reject)
 
+        # For keys that aren't on this keyboard, or that the desktop
+        # catches before the app sees them.
+        self.key_list = QComboBox()
+        self.key_list.setPlaceholderText("Choose a key to add…")
+        for label, name in all_keys():
+            self.key_list.addItem(label, name)
+        self.key_list.setCurrentIndex(-1)
+        self.key_list.activated.connect(self.add_listed_key)
+        clear = QPushButton("Clear")
+        clear.clicked.connect(self.clear)
+        for w in (self.key_list, clear):
+            w.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        clear.setAutoDefault(False)
+        pick = QHBoxLayout()
+        pick.addWidget(QLabel("Or pick from the list:"))
+        pick.addWidget(self.key_list, 1)
+        pick.addWidget(clear)
+
         buttons = QHBoxLayout()
         buttons.addStretch()
         buttons.addWidget(cancel)
@@ -210,6 +279,7 @@ class KeyComboDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(info)
         layout.addWidget(self.shown)
+        layout.addLayout(pick)
         layout.addLayout(buttons)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMinimumWidth(360)
@@ -237,6 +307,15 @@ class KeyComboDialog(QDialog):
         if not self.down:
             self.recording = []          # a fresh combo starts
         self.down.add(name)
+        self.add_key(name)
+
+    def add_listed_key(self, index):
+        """A key picked from the list is added to what's shown, so it
+        can be combined, e.g. press Ctrl, then pick Print."""
+        self.add_key(self.key_list.itemData(index))
+        self.key_list.setCurrentIndex(-1)
+
+    def add_key(self, name):
         if name not in self.recording:
             self.recording.append(name)
         # Modifiers first (Ctrl, Shift, Alt, Meta), then the other keys.
@@ -246,10 +325,64 @@ class KeyComboDialog(QDialog):
         self.shown.setText(combo_label(self.keys))
         self.ok.setEnabled(True)
 
+    def clear(self):
+        self.recording, self.keys = [], []
+        self.shown.setText("…")
+        self.ok.setEnabled(False)
+
     def key_up(self, e):
         if e.isAutoRepeat():
             return
         self.down.discard(evdev_key_name(e.nativeScanCode() - 8))
+
+
+class ChordDialog(QDialog):
+    """Pick the buttons of a new combination."""
+
+    def __init__(self, parent, buttons, taken):
+        super().__init__(parent)
+        self.setWindowTitle("Add button combination")
+        self.taken = taken          # combinations that already exist
+        info = QLabel("Tick the buttons to press <b>together</b>, for "
+                      "example Left and Right.")
+        info.setWordWrap(True)
+        layout = QVBoxLayout(self)
+        layout.addWidget(info)
+        self.boxes = []
+        for name in buttons:
+            box = QCheckBox(button_label(name))
+            box.setProperty("button", name)
+            box.toggled.connect(self.update_ok)
+            layout.addWidget(box)
+            self.boxes.append(box)
+        self.problem = QLabel()
+        self.problem.setStyleSheet("color: palette(placeholder-text);")
+        layout.addWidget(self.problem)
+        self.ok = QPushButton("Add")
+        cancel = QPushButton("Cancel")
+        self.ok.clicked.connect(self.accept)
+        cancel.clicked.connect(self.reject)
+        row = QHBoxLayout()
+        row.addStretch()
+        row.addWidget(cancel)
+        row.addWidget(self.ok)
+        layout.addLayout(row)
+        self.setMinimumWidth(360)
+        self.update_ok()
+
+    def buttons(self):
+        return sorted(b.property("button") for b in self.boxes
+                      if b.isChecked())
+
+    def update_ok(self):
+        chosen = self.buttons()
+        if len(chosen) < 2:
+            self.problem.setText("Choose at least two buttons.")
+        elif chosen in self.taken:
+            self.problem.setText("That combination is already in the list.")
+        else:
+            self.problem.setText("")
+        self.ok.setEnabled(not self.problem.text())
 
 
 class RevertDialog(QDialog):
@@ -300,18 +433,22 @@ class RevertDialog(QDialog):
 class ActionBox(QComboBox):
     """Action dropdown for one button row."""
 
-    def __init__(self, window, button):
+    def __init__(self, window, button, actions=ACTIONS):
         super().__init__()
         self.window_ = window
         self.button = button
         self.keys = []
         self.previous = 0
-        for action, label in ACTIONS:
+        for action, label in actions:
             self.addItem(label, action)
+            if action in ACTION_TIPS:
+                self.setItemData(self.count() - 1, ACTION_TIPS[action],
+                                 Qt.ItemDataRole.ToolTipRole)
+        self.keycombo_index = self.findData("keycombo")
         self.activated.connect(self.on_activated)
 
     def set_mapping(self, mapping):
-        action = (mapping or {}).get("action", "default")
+        action = (mapping or {}).get("action", self.itemData(0))
         self.keys = list((mapping or {}).get("keys", []))
         index = max(self.findData(action), 0)
         self.setCurrentIndex(index)
@@ -326,11 +463,11 @@ class ActionBox(QComboBox):
 
     def update_combo_text(self):
         text = (f"Keys: {combo_label(self.keys)}" if self.keys
-                else dict(ACTIONS)["keycombo"])
-        self.setItemText(KEYCOMBO_INDEX, text)
+                else KEYCOMBO_LABEL)
+        self.setItemText(self.keycombo_index, text)
 
     def on_activated(self, index):
-        if index == KEYCOMBO_INDEX:
+        if index == self.keycombo_index:
             dialog = KeyComboDialog(self.window())
             if dialog.exec() == QDialog.DialogCode.Accepted and dialog.keys:
                 self.keys = dialog.keys
@@ -384,6 +521,28 @@ class MainWindow(QWidget):
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
 
+        self.chord_table = QTableWidget(0, 3)
+        self.chord_table.setHorizontalHeaderLabels(
+            ["Buttons pressed together", "Action", ""])
+        self.chord_table.verticalHeader().hide()
+        self.chord_table.setSelectionMode(
+            QAbstractItemView.SelectionMode.NoSelection)
+        self.chord_table.setEditTriggers(
+            QAbstractItemView.EditTrigger.NoEditTriggers)
+        header = self.chord_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.add_chord_button = QPushButton("Add combination…")
+        self.add_chord_button.setToolTip(
+            "Make several buttons pressed together do their own action, "
+            "e.g. Left + Right together = Middle click")
+        self.add_chord_button.clicked.connect(self.add_chord)
+        chord_title = QHBoxLayout()
+        chord_title.addWidget(QLabel("<b>Button combinations</b>"))
+        chord_title.addStretch()
+        chord_title.addWidget(self.add_chord_button)
+
         self.identify_button = QPushButton("Identify button")
         self.identify_button.setToolTip(
             "Press a button on your device to find it in the list")
@@ -411,12 +570,14 @@ class MainWindow(QWidget):
 
         layout = QVBoxLayout(self)
         layout.addLayout(top)
-        layout.addWidget(self.table, 1)
+        layout.addWidget(self.table, 2)
+        layout.addLayout(chord_title)
+        layout.addWidget(self.chord_table, 1)
         layout.addWidget(self.hint)
         layout.addLayout(buttons)
         layout.addWidget(self.boot_box)
         layout.addWidget(self.status)
-        self.resize(560, 440)
+        self.resize(560, 600)
 
         client.buttonPressed.connect(self.on_button_pressed)
         self.poll = QTimer(self)
@@ -493,9 +654,12 @@ class MainWindow(QWidget):
             else None
         if dev and configured and device_key(dev) == device_key(configured):
             mappings = self.saved_config.get("mappings") or {}
+            chords = self.saved_config.get("chords") or []
         else:
-            mappings = {}   # another device: starts with normal behaviour
+            # another device: starts with normal behaviour
+            mappings, chords = {}, []
         self.fill_rows(mappings)
+        self.fill_chords(chords)
         self.update_buttons()
 
     def fill_rows(self, mappings):
@@ -522,6 +686,49 @@ class MainWindow(QWidget):
         self.table.setCellWidget(row, 1, box)
         return row
 
+    def fill_chords(self, chords):
+        self.chord_table.setRowCount(0)
+        for chord in chords:
+            self.add_chord_row(chord["buttons"], chord)
+
+    def add_chord_row(self, buttons, mapping=None):
+        buttons = sorted(buttons)
+        row = self.chord_table.rowCount()
+        self.chord_table.insertRow(row)
+        item = QTableWidgetItem(chord_label(buttons))
+        item.setToolTip(" + ".join(buttons))
+        self.chord_table.setItem(row, 0, item)
+        box = ActionBox(self, buttons, CHORD_ACTIONS)
+        box.set_mapping(mapping)
+        self.chord_table.setCellWidget(row, 1, box)
+        remove = QPushButton("Remove")
+        remove.clicked.connect(lambda: self.remove_chord(box))
+        self.chord_table.setCellWidget(row, 2, remove)
+
+    def chord_boxes(self):
+        return [self.chord_table.cellWidget(row, 1)
+                for row in range(self.chord_table.rowCount())]
+
+    def add_chord(self):
+        buttons = [self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+                   for row in range(self.table.rowCount())]
+        taken = [box.button for box in self.chord_boxes()]
+        dialog = ChordDialog(self, buttons, taken)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        # Middle click is the usual reason for a combination.
+        self.add_chord_row(dialog.buttons(), {"action": "middle"})
+        self.hint.setText("Combination added. Buttons in a combination "
+                          "react a tiny bit later. Click Apply to save.")
+        self.update_buttons()
+
+    def remove_chord(self, box):
+        for row, b in enumerate(self.chord_boxes()):
+            if b is box:
+                self.chord_table.removeRow(row)
+                break
+        self.update_buttons()
+
     def row_of(self, name):
         for row in range(self.table.rowCount()):
             if self.table.item(row, 0).data(Qt.ItemDataRole.UserRole) == name:
@@ -538,10 +745,13 @@ class MainWindow(QWidget):
             m = box.mapping()
             if m["action"] != "default":
                 mappings[box.button] = m
+        chords = [dict(box.mapping(), buttons=box.button)
+                  for box in self.chord_boxes()]
         return {"version": 1,
                 "device": {k: dev[k] for k in ("vendor", "product", "name")}
                 if dev else None,
-                "mappings": mappings}
+                "mappings": mappings,
+                "chords": chords}
 
     def has_changes(self):
         if not self.saved_config or not self.current_device():
@@ -549,7 +759,8 @@ class MainWindow(QWidget):
         new = self.build_config()
         return (new["device"] != self.saved_config.get("device")
                 or new["mappings"] != (self.saved_config.get("mappings")
-                                       or {}))
+                                       or {})
+                or new["chords"] != (self.saved_config.get("chords") or []))
 
     def changed(self):
         self.update_buttons()
@@ -560,6 +771,8 @@ class MainWindow(QWidget):
         self.device_box.setEnabled(self.service_ok)
         self.boot_box.setEnabled(self.service_ok and self.boot_known)
         self.table.setEnabled(ok)
+        self.chord_table.setEnabled(ok)
+        self.add_chord_button.setEnabled(ok)
         self.defaults_button.setEnabled(ok)
         self.identify_button.setEnabled(ok and dev["connected"])
         self.apply_button.setEnabled(ok and self.has_changes())
@@ -572,7 +785,9 @@ class MainWindow(QWidget):
     def restore_defaults(self):
         for row in range(self.table.rowCount()):
             self.table.cellWidget(row, 1).set_mapping(None)
-        self.hint.setText("All buttons set to Default. Click Apply to save.")
+        self.chord_table.setRowCount(0)
+        self.hint.setText("All buttons set to Default and combinations "
+                          "removed. Click Apply to save.")
         self.update_buttons()
 
     # -- identify --
@@ -660,7 +875,7 @@ class MainWindow(QWidget):
         if answer != QMessageBox.StandardButton.Yes:
             return
         self.stop_identify()
-        new = {"version": 1, "device": None, "mappings": {}}
+        new = {"version": 1, "device": None, "mappings": {}, "chords": []}
         self.set_busy(True, "Saving… (a password prompt may appear)")
 
         def done(error_name, error_message):
@@ -702,7 +917,8 @@ class MainWindow(QWidget):
     def set_busy(self, busy, text=""):
         for w in (self.device_box, self.table, self.identify_button,
                   self.defaults_button, self.apply_button, self.boot_box,
-                  self.forget_button):
+                  self.forget_button, self.chord_table,
+                  self.add_chord_button):
             w.setEnabled(not busy)
         if busy:
             self.hint.setText(text)
