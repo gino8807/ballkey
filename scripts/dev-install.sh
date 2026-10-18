@@ -9,6 +9,27 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
+# The real BallKey package, if installed, as e.g. "ballkey-0.1.4-1.fc44.noarch".
+packaged_version() {
+    { rpm -q ballkey || dpkg-query -W -f='ballkey ${Version}\n' ballkey ||
+      pacman -Q ballkey; } 2>/dev/null | grep -v 'not installed' | head -1
+}
+# Command that puts the package's own files back.
+reinstall_command() {
+    if command -v dnf >/dev/null; then echo "sudo dnf reinstall ballkey"
+    elif command -v apt >/dev/null; then echo "sudo apt install --reinstall ballkey"
+    else echo "sudo pacman -S ballkey"; fi
+}
+
+package=$(packaged_version)
+if [[ -n $package ]]; then
+    echo "Note: the BallKey package ($package) is installed. This replaces"
+    echo "its program files with the ones from this folder (your settings"
+    echo "are kept). To go back to the package's files later, run:"
+    echo "  sudo $(dirname "$0")/dev-uninstall.sh && $(reinstall_command)"
+    echo
+fi
+
 install -Dm755 daemon/ballkeyd.py /usr/lib/ballkey/ballkeyd.py
 # Keep existing settings (they may have been changed from the app).
 if [[ ! -e /etc/ballkey/config.json ]]; then
