@@ -21,7 +21,7 @@ every boot and whenever the device is reconnected.
 BallKey was vibecoded, and it's my first project. I don't know how to
 program: I described what I wanted, an AI coding assistant (Claude Code)
 wrote the code, and I tested each step on my own computer (Fedora KDE,
-with a Logitech G403 and Kensington Expert) before moving on. The Debian, Ubuntu and
+with a Logitech G403 and Kensington Expert) before moving on. The Debian-based and
 Arch packages have only been tested in containers, not on real hardware.
 
 It works well for me, but no experienced Linux developer has reviewed it
@@ -35,7 +35,7 @@ Download the package for your distribution, then:
 | Distribution | Package | Install |
 |---|---|---|
 | Fedora 44+ | `ballkey-…fc44.noarch.rpm` | Double-click it (opens Discover / Software), or `sudo dnf install ./ballkey-*.noarch.rpm` |
-| Debian 13+, Ubuntu 26.04+ | `ballkey_…_all.deb` | `sudo apt install ./ballkey_*_all.deb` |
+| Debian-based (Debian 13+, Ubuntu 26.04+) | `ballkey_…_all.deb` | `sudo apt install ./ballkey_*_all.deb` |
 | Arch Linux | `ballkey-…-any.pkg.tar.zst` | `sudo pacman -U ballkey-*-any.pkg.tar.zst` |
 
 **Fedora updates:** the Fedora package also adds BallKey's update
@@ -43,7 +43,7 @@ repository ([COPR](https://copr.fedorainfracloud.org/coprs/gino8807/ballkey/)),
 so Discover / Software and `dnf upgrade` find new versions by themselves.
 You can also install straight from it:
 `sudo dnf copr enable gino8807/ballkey && sudo dnf install ballkey`.
-On Debian, Ubuntu and Arch, download and install new versions by hand for now.
+On Debian-based distributions and Arch, download and install new versions by hand for now.
 
 **Older versions** (back to 0.1.0) are on the
 [Releases page](https://github.com/gino8807/ballkey/releases), in case
@@ -105,7 +105,7 @@ have; it shows as "(not connected)" in the list.
 
 Remove the `ballkey` package (Discover/Software, `sudo dnf remove ballkey`,
 `sudo apt purge ballkey`, or `sudo pacman -R ballkey`). Your mouse goes
-back to normal immediately. On Debian/Ubuntu, `apt remove` keeps your
+back to normal immediately. On Debian-based distributions, `apt remove` keeps your
 settings and `apt purge` deletes them.
 
 ## Troubleshooting
