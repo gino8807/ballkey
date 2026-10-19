@@ -35,7 +35,7 @@ Download the package for your distribution, then:
 | Distribution | Package | Install |
 |---|---|---|
 | Fedora 44+ | `ballkey-…fc44.noarch.rpm` | Double-click it (opens Discover / Software), or `sudo dnf install ./ballkey-*.noarch.rpm` |
-| Debian-based (Debian 13+, Ubuntu 26.04+) | `ballkey_…_all.deb` | `sudo apt install ./ballkey_*_all.deb` |
+| Debian-based | `ballkey_…_all.deb` | `sudo apt install ./ballkey_*_all.deb` |
 | Arch Linux | `ballkey-…-any.pkg.tar.zst` | `sudo pacman -U ballkey-*-any.pkg.tar.zst` |
 
 **Fedora updates:** the Fedora package also adds BallKey's update
