@@ -114,6 +114,18 @@ DRAGS = {
 }
 OTHER_ACTIONS = {"keycombo", "none", "default"}
 
+# Wheel tilt arrives as sideways scrolling, not as button presses, so
+# each direction gets a made-up button code (above any real key code).
+TILT_LEFT = ecodes.KEY_MAX + 1
+TILT_RIGHT = ecodes.KEY_MAX + 2
+TILT_BUTTONS = {"TILT_LEFT": TILT_LEFT, "TILT_RIGHT": TILT_RIGHT}
+REL_HWHEEL_HI_RES = ecodes.ecodes.get("REL_HWHEEL_HI_RES", 12)
+
+
+def tilt_button(value):
+    """Which tilt button a sideways scroll step belongs to."""
+    return TILT_LEFT if value < 0 else TILT_RIGHT
+
 
 def code_of(name):
     """Turn a name like 'BTN_SIDE' into its numeric code."""
@@ -123,8 +135,18 @@ def code_of(name):
         raise ValueError(f"unknown key or button name: {name}") from None
 
 
+def button_code(name):
+    """Like code_of, but also knows the wheel tilt buttons."""
+    if name in TILT_BUTTONS:
+        return TILT_BUTTONS[name]
+    return code_of(name)
+
+
 def name_of(code):
     """Turn a numeric button/key code into a readable name."""
+    for tilt, tilt_code in TILT_BUTTONS.items():
+        if code == tilt_code:
+            return tilt
     name = ecodes.BTN.get(code) or ecodes.KEY.get(code) or f"code {code}"
     # Some codes have several names, e.g. ('BTN_LEFT', 'BTN_MOUSE').
     return name[0] if isinstance(name, (list, tuple)) else name
@@ -200,6 +222,10 @@ class Chord:
                              "'buttons'")
         self.names = sorted(set(names))
         self.label = " + ".join(self.names)
+        if any(n in TILT_BUTTONS for n in self.names):
+            # A tilt has no "held down", so it can't be pressed together.
+            raise ValueError(f"{self.label}: wheel tilt can't be part of "
+                             "a combination")
         self.buttons = frozenset(code_of(n) for n in self.names)
         if spec.get("action") == "default":
             raise ValueError(f"{self.label}: combination can't be 'default'")
@@ -234,7 +260,7 @@ def parse_config(cfg, strict):
         try:
             m = Mapping(button, spec)
             if m.action != "default":
-                mappings[code_of(button)] = m
+                mappings[button_code(button)] = m
         except ValueError as e:
             if strict:
                 raise
@@ -303,8 +329,12 @@ def find_device(want):
 
 
 def buttons_of(dev):
-    keys = dev.capabilities().get(ecodes.EV_KEY, [])
-    return [name_of(c) for c in keys if ecodes.BTN_MISC <= c < ecodes.KEY_OK]
+    caps = dev.capabilities()
+    keys = caps.get(ecodes.EV_KEY, [])
+    names = [name_of(c) for c in keys if ecodes.BTN_MISC <= c < ecodes.KEY_OK]
+    if ecodes.REL_HWHEEL in caps.get(ecodes.EV_REL, []):
+        names += list(TILT_BUTTONS)
+    return names
 
 
 def device_info(dev):
@@ -539,6 +569,10 @@ class Daemon(dbus.service.Object):
         return True
 
     def handle_event(self, event):
+        if event.type == ecodes.EV_REL and event.code in (
+                ecodes.REL_HWHEEL, REL_HWHEEL_HI_RES):
+            self.tilt(event)
+            return
         if event.type != ecodes.EV_KEY:
             self.ui.write_event(event)
             return
@@ -576,6 +610,27 @@ class Daemon(dbus.service.Object):
             self.ui.write(ecodes.EV_KEY, code, value)
             if value == 0:
                 self.locked.discard(code)
+
+    def tilt(self, event):
+        """Sideways scrolling (wheel tilt). If that direction is mapped,
+        each step is one press and release of its tilt button; if not,
+        it scrolls sideways as normal."""
+        code = tilt_button(event.value)
+        # Every step comes twice: as REL_HWHEEL and as a high-resolution
+        # REL_HWHEEL_HI_RES. Only the first one counts as a press.
+        step = event.code == ecodes.REL_HWHEEL
+        if step and self.identify_main:
+            self.report_button(code)
+        if code not in self.mappings:
+            self.ui.write_event(event)
+            return
+        if not step:
+            return
+        for _ in range(abs(event.value)):
+            self.button(code, 1)
+            self.ui.syn()
+            self.button(code, 0)
+        # The real device's own SYN_REPORT follows and finishes the frame.
 
     # -- button combinations --
     # A button that is part of a combination isn't passed on straight
@@ -669,8 +724,9 @@ class Daemon(dbus.service.Object):
     # -- identify mode --
 
     def report_button(self, code):
-        # Only mouse buttons, never keyboard keys.
-        if ecodes.BTN_MISC <= code < ecodes.KEY_OK:
+        # Only mouse buttons and wheel tilt, never keyboard keys.
+        if (ecodes.BTN_MISC <= code < ecodes.KEY_OK
+                or code in TILT_BUTTONS.values()):
             self.ButtonPressed(name_of(code))
 
     def on_identify_events(self, fd, cond):
@@ -678,6 +734,9 @@ class Daemon(dbus.service.Object):
             for event in read_events(self.identify_dev, cond):
                 if event.type == ecodes.EV_KEY and event.value == 1:
                     self.report_button(event.code)
+                elif (event.type == ecodes.EV_REL
+                      and event.code == ecodes.REL_HWHEEL):
+                    self.report_button(tilt_button(event.value))
         except OSError:
             self.identify_watch = None
             self.StopIdentify()
@@ -887,6 +946,8 @@ def cmd_watch(config_path):
     for event in dev.read_loop():
         if event.type == ecodes.EV_KEY and event.value == 1:
             print(f"  pressed: {name_of(event.code)}")
+        elif event.type == ecodes.EV_REL and event.code == ecodes.REL_HWHEEL:
+            print(f"  pressed: {name_of(tilt_button(event.value))}")
 
 
 def cmd_run(config_path):

@@ -97,6 +97,13 @@ action (any action except Default) instead of their own. The action is
 held until all of the combination's buttons are released. A button that
 is part of a combination waits up to 50 ms before acting normally.
 
+**Wheel tilt** was added 2026-10-20: tilting the wheel arrives as
+sideways scrolling, not as button presses, so mice that report sideways
+scrolling get two extra buttons, `TILT_LEFT` and `TILT_RIGHT`. When one is
+mapped, each sideways scroll step in that direction is one press and
+release of it; unmapped, it scrolls sideways as normal. Tilt can't be
+part of a combination (it has no "held down").
+
 (The IDs above are illustrative; read the real ones from the device.)
 
 ## Packaging

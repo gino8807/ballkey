@@ -140,6 +140,7 @@ the device straight back, so it always falls back to working normally.
 ```
 ./scripts/build-packages.sh     # .rpm (in a Fedora container), .deb and Arch packages into dist/
 ./tests/container-test.sh       # install/run/remove in Fedora, Debian, Ubuntu and Arch containers (podman)
+./tests/test-remap.py           # replay recorded mouse events through the remapping (no device needed)
 ```
 
 `build-packages.sh` downloads a pinned, checksum-verified copy of

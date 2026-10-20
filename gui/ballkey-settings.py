@@ -39,7 +39,12 @@ REVERT_SECONDS = 15
 # Shown for every device that has them, even if not mapped yet.
 COMMON_BUTTONS = ["BTN_LEFT", "BTN_RIGHT", "BTN_MIDDLE", "BTN_SIDE",
                   "BTN_EXTRA"]
+# Wheel tilt (sideways scrolling). Shown for devices that have it; they
+# can't be part of a combination.
+TILT_BUTTONS = ["TILT_LEFT", "TILT_RIGHT"]
 BUTTON_LABELS = {
+    "TILT_LEFT": "Wheel tilt left (scroll left)",
+    "TILT_RIGHT": "Wheel tilt right (scroll right)",
     "BTN_LEFT": "Left button",
     "BTN_RIGHT": "Right button",
     "BTN_MIDDLE": "Middle button / wheel click",
@@ -667,6 +672,7 @@ class MainWindow(QWidget):
         reported = set(dev["buttons"]) if dev else set()
         names = [b for b in COMMON_BUTTONS
                  if b in reported or not dev or not dev["connected"]]
+        names += [b for b in TILT_BUTTONS if b in reported]
         for b in list(mappings) + sorted(self.extra_rows):
             if b not in names:
                 names.append(b)
@@ -712,7 +718,8 @@ class MainWindow(QWidget):
     def add_chord(self):
         buttons = [self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
                    for row in range(self.table.rowCount())]
-        taken = [box.button for box in self.chord_boxes()]
+        buttons = [b for b in buttons if b not in TILT_BUTTONS]
+        taken =[box.button for box in self.chord_boxes()]
         dialog = ChordDialog(self, buttons, taken)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
