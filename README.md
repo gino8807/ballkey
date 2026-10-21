@@ -93,6 +93,22 @@ BallKey waits to see whether you're pressing the other ones too.
 your buttons changed after a restart. Opening BallKey turns remapping
 back on for that session.
 
+**Wheel tilt**: if your scroll wheel tilts left and right, **Wheel tilt
+left** and **Wheel tilt right** appear in the list. Left on Default,
+tilting scrolls sideways as usual.
+
+**Buttons that type keys**: some gaming mice, like the Logitech G502,
+have buttons that type a shortcut (for example Ctrl+C) instead of acting
+as mouse buttons. Click **Identify button** and press one: it's added to
+the list as "Button that types Ctrl+C", and you can give it any action.
+Left on Default, it keeps typing its shortcut.
+
+Buttons the mouse handles by itself, like the G502's DPI and sniper
+buttons, send nothing to the computer, so BallKey can't change them. To
+change DPI or reassign the DPI and sniper buttons, use
+[Piper](https://github.com/libratbag/piper), which works alongside
+BallKey.
+
 The list shows the common buttons; extra buttons appear when you use
 **Identify button** on them. **Restore defaults** sets every button back
 to normal and removes all combinations (click **Apply** to save).
