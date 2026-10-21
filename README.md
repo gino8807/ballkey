@@ -46,11 +46,10 @@ Download the package for your distribution, then:
   so Discover / Software and `dnf upgrade` find new versions by themselves.
   You can also install straight from it:
   `sudo dnf copr enable gino8807/ballkey && sudo dnf install ballkey`.
-- **Debian-based:** automatic updates are coming in the next version
-  (0.1.6). Its package will add BallKey's update repository, so Discover /
-  Software and `sudo apt update && sudo apt upgrade` find new versions by
-  themselves. Until then, and to get 0.1.6 itself, download and install
-  new versions by hand.
+- **Debian-based:** from 0.1.6 on, the package adds BallKey's signed
+  update repository (on GitHub Pages), so Discover / Software and
+  `sudo apt update && sudo apt upgrade` find new versions by themselves.
+  If you have 0.1.5 or older, install 0.1.6 by hand once.
 - **Arch:** I'm working on automatic updates for Arch. For now,
   download and install new versions by hand.
 

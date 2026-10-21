@@ -4,7 +4,7 @@
 name: ballkey
 arch: all
 platform: linux
-version: 0.1.5
+version: 0.1.6
 release: 1
 section: utils
 priority: optional
