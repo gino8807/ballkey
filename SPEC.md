@@ -104,6 +104,16 @@ mapped, each sideways scroll step in that direction is one press and
 release of it; unmapped, it scrolls sideways as normal. Tilt can't be
 part of a combination (it has no "held down").
 
+**Buttons that type keys** were added 2026-10-20: some mice (e.g.
+Logitech G502) have a keyboard part, a second input device with the same
+vendor and product ID on the same USB connection, and send key presses
+like Ctrl+C from buttons through it. The daemon grabs it together with
+the mouse. Keys pressed in the same frame are one button, named like
+`KEY_LEFTCTRL+KEY_C`; if mapped, its action runs (held while the button
+is held), otherwise the keys pass through unchanged. The app adds these
+buttons with Identify, since a keyboard part can type almost any key.
+They can't be part of a combination.
+
 (The IDs above are illustrative; read the real ones from the device.)
 
 ## Packaging

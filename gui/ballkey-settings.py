@@ -111,7 +111,15 @@ KEY_LABELS = {
 }
 
 
+def is_key_button(name):
+    """A mouse button that types keys (e.g. 'KEY_LEFTCTRL+KEY_C'), as some
+    mice like the Logitech G502 have. These can't be in a combination."""
+    return name.startswith("KEY_")
+
+
 def button_label(name):
+    if is_key_button(name):
+        return f"Button that types {combo_label(name.split('+'))}"
     return BUTTON_LABELS.get(name, f"Extra button ({name})")
 
 
@@ -570,6 +578,7 @@ class MainWindow(QWidget):
         self.boot_box.clicked.connect(self.toggle_boot)
 
         self.hint = QLabel()
+        self.hint.setWordWrap(True)
         self.status = QLabel()
         self.status.setStyleSheet("color: palette(placeholder-text);")
 
@@ -665,6 +674,10 @@ class MainWindow(QWidget):
             mappings, chords = {}, []
         self.fill_rows(mappings)
         self.fill_chords(chords)
+        if dev and dev.get("keyboard_part"):
+            self.hint.setText(
+                "Some buttons on this device type keys (like Ctrl+C). To add "
+                "one to the list, click Identify button and press it.")
         self.update_buttons()
 
     def fill_rows(self, mappings):
@@ -718,7 +731,8 @@ class MainWindow(QWidget):
     def add_chord(self):
         buttons = [self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
                    for row in range(self.table.rowCount())]
-        buttons = [b for b in buttons if b not in TILT_BUTTONS]
+        buttons = [b for b in buttons
+                   if b not in TILT_BUTTONS and not is_key_button(b)]
         taken =[box.button for box in self.chord_boxes()]
         dialog = ChordDialog(self, buttons, taken)
         if dialog.exec() != QDialog.DialogCode.Accepted:

@@ -33,6 +33,16 @@ G502_TILT_RIGHT = [(EV_REL, ecodes.REL_HWHEEL, 1),
 # Same mouse: front thumb button click.
 G502_THUMB = [(EV_KEY, ecodes.BTN_EXTRA, 1), SYN,
               (EV_KEY, ecodes.BTN_EXTRA, 0), SYN]
+# Same mouse, from its keyboard part: the front button below left click,
+# which types Ctrl+V (Ctrl and V in the same frame).
+G502_CTRL_V = [(EV_KEY, ecodes.KEY_LEFTCTRL, 1), (EV_KEY, ecodes.KEY_V, 1),
+               SYN,
+               (EV_KEY, ecodes.KEY_LEFTCTRL, 0), (EV_KEY, ecodes.KEY_V, 0),
+               SYN]
+G502_CTRL_C = [(EV_KEY, ecodes.KEY_LEFTCTRL, 1), (EV_KEY, ecodes.KEY_C, 1),
+               SYN,
+               (EV_KEY, ecodes.KEY_LEFTCTRL, 0), (EV_KEY, ecodes.KEY_C, 0),
+               SYN]
 
 
 class FakeUInput:
@@ -70,6 +80,16 @@ def make_daemon(mappings, chords=()):
 def replay(daemon, events):
     for type_, code, value in events:
         daemon.handle_event(InputEvent(0, 0, type_, code, value))
+    return daemon.ui.sent
+
+
+def replay_keyboard_part(daemon, events):
+    """Replay events from the mouse's keyboard part (see Companion)."""
+    companion = ballkeyd.Companion(dev=None)
+    for type_, code, value in events:
+        frame = companion.add_event(InputEvent(0, 0, type_, code, value))
+        if frame is not None:
+            daemon.companion_frame(frame)
     return daemon.ui.sent
 
 
@@ -116,6 +136,46 @@ class TiltTest(unittest.TestCase):
                                                        "TILT_LEFT"],
                                            "action": "middle"}]},
                 strict=True)
+
+
+class KeyButtonTest(unittest.TestCase):
+    """Mouse buttons that type keys, through the mouse's keyboard part."""
+
+    def test_unmapped_keys_pass_through(self):
+        d = make_daemon({})
+        self.assertEqual(replay_keyboard_part(d, G502_CTRL_V), G502_CTRL_V)
+
+    def test_ctrl_v_button_does_back(self):
+        d = make_daemon({"KEY_LEFTCTRL+KEY_V": {"action": "back"}})
+        self.assertEqual(replay_keyboard_part(d, G502_CTRL_V), [
+            (EV_KEY, ecodes.BTN_SIDE, 1), SYN,
+            (EV_KEY, ecodes.BTN_SIDE, 0), SYN])
+
+    def test_other_key_button_unchanged(self):
+        d = make_daemon({"KEY_LEFTCTRL+KEY_V": {"action": "back"}})
+        self.assertEqual(replay_keyboard_part(d, G502_CTRL_C), G502_CTRL_C)
+
+    def test_key_button_held_like_a_button(self):
+        # Left click stays down for as long as the button is held.
+        d = make_daemon({"KEY_LEFTCTRL+KEY_C": {"action": "left"}})
+        press, release = G502_CTRL_C[:3], G502_CTRL_C[3:]
+        self.assertEqual(replay_keyboard_part(d, press),
+                         [(EV_KEY, ecodes.BTN_LEFT, 1), SYN])
+        self.assertEqual(replay_keyboard_part(d, release)[2:],
+                         [(EV_KEY, ecodes.BTN_LEFT, 0), SYN])
+
+    def test_key_button_identify(self):
+        d = make_daemon({})
+        pressed = []
+        d.ButtonPressed = pressed.append
+        d.identify_main = True
+        replay_keyboard_part(d, G502_CTRL_V + G502_CTRL_C)
+        self.assertEqual(pressed, ["KEY_LEFTCTRL+KEY_V",
+                                   "KEY_LEFTCTRL+KEY_C"])
+
+    def test_combo_name_order_doesnt_matter(self):
+        self.assertEqual(ballkeyd.button_code("KEY_V+KEY_LEFTCTRL"),
+                         ballkeyd.button_code("KEY_LEFTCTRL+KEY_V"))
 
 
 class ButtonTest(unittest.TestCase):

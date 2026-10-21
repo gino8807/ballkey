@@ -4,7 +4,9 @@
 
 How it works:
   1. Find the configured device by vendor ID, product ID and name.
-  2. "Grab" it, so no other program sees its events directly.
+  2. "Grab" it, so no other program sees its events directly. Its
+     keyboard part, if it has one (buttons that type e.g. Ctrl+C), is
+     grabbed too.
   3. Create a virtual device through /dev/uinput.
   4. Copy every event from the real device to the virtual one, except
      mapped buttons, which are replaced by their assigned action.
@@ -135,10 +137,33 @@ def code_of(name):
         raise ValueError(f"unknown key or button name: {name}") from None
 
 
+MODIFIERS = {ecodes.KEY_LEFTCTRL, ecodes.KEY_RIGHTCTRL, ecodes.KEY_LEFTSHIFT,
+             ecodes.KEY_RIGHTSHIFT, ecodes.KEY_LEFTALT, ecodes.KEY_RIGHTALT,
+             ecodes.KEY_LEFTMETA, ecodes.KEY_RIGHTMETA}
+
+
+def key_button(codes):
+    """The mapping key for a mouse button that types these keys: the key
+    code itself for one key, or a set of codes for a combo like Ctrl+C."""
+    return next(iter(codes)) if len(codes) == 1 else frozenset(codes)
+
+
+def keys_name(codes):
+    """Readable name like 'KEY_LEFTCTRL+KEY_C', modifiers first."""
+    return "+".join(name_of(c) for c in sorted(
+        codes, key=lambda c: (c not in MODIFIERS, c)))
+
+
 def button_code(name):
-    """Like code_of, but also knows the wheel tilt buttons."""
+    """Like code_of, but also knows the wheel tilt buttons and buttons
+    that type a key combo (named like 'KEY_LEFTCTRL+KEY_C')."""
     if name in TILT_BUTTONS:
         return TILT_BUTTONS[name]
+    if isinstance(name, str) and "+" in name:
+        codes = {code_of(n) for n in name.split("+")}
+        if len(codes) < 2:
+            raise ValueError(f"{name}: key combo needs different keys")
+        return frozenset(codes)
     return code_of(name)
 
 
@@ -328,6 +353,41 @@ def find_device(want):
     return chosen
 
 
+def usb_connection(dev):
+    """The part of a device's physical path that names its USB connection,
+    e.g. 'usb-0000:00:14.0-2' for 'usb-0000:00:14.0-2/input1'."""
+    phys = dev.phys or ""
+    return phys.rsplit("/", 1)[0] if "/" in phys else None
+
+
+def find_companions(dev):
+    """The keyboard part of a mouse: other input devices with the same
+    vendor and product ID on the same USB connection. Some mice (e.g.
+    Logitech G502) send key presses like Ctrl+C from buttons through it.
+    Never matches a separate keyboard: that has its own connection or
+    product ID."""
+    connection = usb_connection(dev)
+    found = []
+    if not connection:
+        return found
+    for path in evdev.list_devices():
+        if path == dev.path:
+            continue
+        try:
+            other = evdev.InputDevice(path)
+        except OSError:
+            continue
+        if (usb_connection(other) == connection
+                and other.info.vendor == dev.info.vendor
+                and other.info.product == dev.info.product
+                and not other.name.startswith(VIRTUAL_NAME_PREFIX)
+                and ecodes.EV_KEY in other.capabilities()):
+            found.append(other)
+        else:
+            other.close()
+    return found
+
+
 def buttons_of(dev):
     caps = dev.capabilities()
     keys = caps.get(ecodes.EV_KEY, [])
@@ -338,10 +398,15 @@ def buttons_of(dev):
 
 
 def device_info(dev):
+    companions = find_companions(dev)
+    for c in companions:
+        c.close()
     return {"name": dev.name,
             "vendor": f"{dev.info.vendor:04x}",
             "product": f"{dev.info.product:04x}",
-            "buttons": buttons_of(dev)}
+            "buttons": buttons_of(dev),
+            # Buttons that type keys can only be found by pressing them.
+            "keyboard_part": bool(companions)}
 
 
 def make_virtual_device(dev):
@@ -373,6 +438,38 @@ def dbus_error(name, message):
     return dbus.DBusException(message, name=f"org.ballkey.Error.{name}")
 
 
+class Companion:
+    """The keyboard part of a mouse (see find_companions), read alongside
+    it. Its events are collected per frame (up to SYN_REPORT), because
+    keys pressed in the same frame come from one button, e.g. Ctrl+C."""
+
+    def __init__(self, dev):
+        self.dev = dev
+        self.frame = []
+        self.watch = None
+
+    def add_event(self, event):
+        """Collect an event. Returns the finished frame at SYN_REPORT."""
+        if event.type == ecodes.EV_SYN:
+            if event.code != ecodes.SYN_REPORT:
+                return None
+            frame, self.frame = self.frame, []
+            return frame
+        self.frame.append(event)
+        return None
+
+    def close(self):
+        if self.watch:
+            GLib.source_remove(self.watch)
+            self.watch = None
+        self.dev.close()
+
+
+def pressed_keys(frame):
+    return frozenset(e.code for e in frame
+                     if e.type == ecodes.EV_KEY and e.value == 1)
+
+
 class Daemon(dbus.service.Object):
     """Runs the remapping and answers the settings app over D-Bus.
 
@@ -398,9 +495,13 @@ class Daemon(dbus.service.Object):
         self.chord_down = set()   # its buttons that are still down
         self.last_error = ""
         self.dev = self.ui = self.dev_watch = None
+        self.companions = []      # the device's keyboard part (Companion)
+        # Mapped key-combo buttons held down: (Mapping, keys still down).
+        self.combos_held = []
         self.waiting_logged = False
         self.identify_main = False   # identifying on the remapped device
         self.identify_dev = self.identify_watch = self.identify_timeout = None
+        self.identify_companions = []
         self.load_from_disk()
 
         # If D-Bus is unavailable, keep remapping anyway; only the
@@ -509,7 +610,7 @@ class Daemon(dbus.service.Object):
             if d.action == "add" and (d.device_node or "").startswith(
                     "/dev/input/event"):
                 added = True
-        if added and not self.dev:
+        if added:
             # Give the new device a moment to finish setting up.
             GLib.timeout_add(500, self.guard(self.on_retry_once))
         return True
@@ -519,7 +620,11 @@ class Daemon(dbus.service.Object):
         return True
 
     def on_retry_once(self):
-        self.try_connect()
+        if self.dev:
+            # The keyboard part may show up a moment after the mouse.
+            self.connect_companions()
+        else:
+            self.try_connect()
         return False
 
     def try_connect(self):
@@ -555,7 +660,76 @@ class Daemon(dbus.service.Object):
             dev.fd, GLib.PRIORITY_HIGH,
             GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR,
             self.guard(self.on_dev_events))
+        self.connect_companions()
         log.info("Remapping active.")
+
+    def connect_companions(self):
+        """Grab the device's keyboard part too, so buttons that type keys
+        can be remapped. Keys that aren't mapped are passed on unchanged."""
+        open_paths = {c.dev.path for c in self.companions}
+        for dev in find_companions(self.dev):
+            if dev.path in open_paths:
+                dev.close()
+                continue
+            try:
+                dev.grab()
+            except OSError as e:
+                log.warning("Could not grab %s, its keys can't be remapped: "
+                            "%s", dev.name, e)
+                dev.close()
+                continue
+            companion = Companion(dev)
+            companion.watch = GLib.io_add_watch(
+                dev.fd, GLib.PRIORITY_HIGH,
+                GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR,
+                self.guard(self.on_companion_events), companion)
+            self.companions.append(companion)
+            log.info("Also using %s (%s)", dev.name, dev.path)
+
+    def on_companion_events(self, fd, cond, companion):
+        try:
+            events = read_events(companion.dev, cond)
+        except OSError as e:
+            # Usually the whole mouse was unplugged; the main device
+            # notices that too.
+            log.warning("%s lost: %s", companion.dev.name, e)
+            companion.watch = None   # returning False removes the watch
+            self.companions.remove(companion)
+            companion.close()
+            return False
+        for event in events:
+            frame = companion.add_event(event)
+            if frame is not None:
+                self.companion_frame(frame)
+        return True
+
+    def companion_frame(self, frame):
+        """One frame from the keyboard part. The keys pressed in it are
+        one mouse button (e.g. Ctrl+C); if that's mapped, its action runs
+        instead of the keys. Everything else is passed on unchanged."""
+        pressed = pressed_keys(frame)
+        if pressed and self.identify_main:
+            self.ButtonPressed(keys_name(pressed))
+        mapping = self.mappings.get(key_button(pressed)) if pressed else None
+        if mapping:
+            self.combos_held.append((mapping, set(pressed)))
+        passed = []
+        for e in frame:
+            held = next((h for h in self.combos_held
+                         if e.type == ecodes.EV_KEY and e.code in h[1]), None)
+            if held is None:
+                passed.append(e)
+            elif e.value == 0:
+                # The action ends when all its keys have been let go.
+                held[1].discard(e.code)
+                if not held[1]:
+                    self.combos_held.remove(held)
+                    held[0].handle(self.ui, 0, self.locked)
+        if mapping:
+            mapping.handle(self.ui, 1, self.locked)
+        for e in passed:
+            self.ui.write_event(e)
+        self.ui.syn()
 
     def on_dev_events(self, fd, cond):
         try:
@@ -700,6 +874,14 @@ class Daemon(dbus.service.Object):
         if self.dev_watch:
             GLib.source_remove(self.dev_watch)
             self.dev_watch = None
+        for companion in self.companions:
+            try:
+                companion.dev.ungrab()
+            except OSError:
+                pass
+            companion.close()
+        self.companions = []
+        self.combos_held = []
         if self.dev:
             try:
                 self.dev.ungrab()
@@ -740,6 +922,19 @@ class Daemon(dbus.service.Object):
         except OSError:
             self.identify_watch = None
             self.StopIdentify()
+            return False
+        return True
+
+    def on_identify_companion_events(self, fd, cond, companion):
+        try:
+            for event in read_events(companion.dev, cond):
+                frame = companion.add_event(event)
+                if frame and pressed_keys(frame):
+                    self.ButtonPressed(keys_name(pressed_keys(frame)))
+        except OSError:
+            companion.watch = None
+            self.identify_companions.remove(companion)
+            companion.close()
             return False
         return True
 
@@ -853,6 +1048,13 @@ class Daemon(dbus.service.Object):
                 dev.fd, GLib.PRIORITY_DEFAULT,
                 GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR,
                 self.guard(self.on_identify_events))
+            for other in find_companions(dev):
+                companion = Companion(other)
+                companion.watch = GLib.io_add_watch(
+                    other.fd, GLib.PRIORITY_DEFAULT,
+                    GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR,
+                    self.guard(self.on_identify_companion_events), companion)
+                self.identify_companions.append(companion)
         self.identify_timeout = GLib.timeout_add_seconds(
             IDENTIFY_SECONDS, self.guard(self.on_identify_timeout))
         log.info("Identify mode on for %s", name)
@@ -866,6 +1068,9 @@ class Daemon(dbus.service.Object):
             GLib.source_remove(self.identify_timeout)
         if self.identify_dev:
             self.identify_dev.close()
+        for companion in self.identify_companions:
+            companion.close()
+        self.identify_companions = []
         self.identify_main = False
         self.identify_dev = self.identify_watch = self.identify_timeout = None
         if was_on:
