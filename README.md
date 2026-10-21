@@ -50,8 +50,8 @@ any other app update.
 - **Debian-based:** the package adds BallKey's signed update repository
   (on GitHub Pages), so Discover / Software and `sudo apt update && sudo apt upgrade`
   find new versions by themselves.
-- **Arch:** download and install new versions by hand for now (an AUR
-  package is coming).
+- **Arch:** I'm working on automatic updates for Arch. For now,
+  download and install new versions by hand.
 
 **Older versions** (back to 0.1.0) are on the
 [Releases page](https://github.com/gino8807/ballkey/releases), in case
