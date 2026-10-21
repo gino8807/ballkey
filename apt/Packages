@@ -16,3 +16,21 @@ Description: Simple button remapper for mice and trackballs.
  Choose what each button does (back, forward, copy, paste, key combos
  and more) in a graphical app. Works with any brand, on Wayland and X11.
 
+Package: ballkey
+Architecture: all
+Version: 0.1.7-1
+Priority: optional
+Section: utils
+Maintainer: gino <gino8807@protonmail.com>
+Installed-Size: 118
+Depends: python3, python3-evdev, python3-pyudev, python3-dbus, python3-gi, python3-pyside6.qtcore, python3-pyside6.qtgui, python3-pyside6.qtwidgets, python3-pyside6.qtdbus, polkitd
+Filename: ./ballkey_0.1.7-1_all.deb
+Size: 38744
+MD5sum: cd1f85a90f2f29886158da9380beae6b
+SHA1: 7ba1080d9c15bb367d75bb531f14d407e4d97256
+SHA256: 7ceb86adb88bae0cccac09d8e8377bfe5e40a1dd1a277a8e0811c3b1dae46c6b
+SHA512: 2cd8b435a20b323182bb986f4dac53128e25d4139d297d465f4900408e53859d7e71cad5a29f23af672a1ac3be60ce656eeab58f6d9ce05d6618c1af4aafa2e5
+Description: Simple button remapper for mice and trackballs.
+ Choose what each button does (back, forward, copy, paste, key combos
+ and more) in a graphical app. Works with any brand, on Wayland and X11.
+
