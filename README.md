@@ -38,7 +38,6 @@ Download the package for your distribution, then:
 | Fedora 44+ | `ballkey-…fc44.noarch.rpm` | Double-click it (opens Discover / Software), or `sudo dnf install ./ballkey-*.noarch.rpm` |
 | Debian-based | `ballkey_…_all.deb` | `sudo apt install ./ballkey_*_all.deb` |
 | Arch Linux | `ballkey-…-any.pkg.tar.zst` | `sudo pacman -U ballkey-*-any.pkg.tar.zst` |
-| Arch Linux (AUR) | [`ballkey`](https://aur.archlinux.org/packages/ballkey) | `yay -S ballkey` (or any AUR helper) |
 
 **Updates:** after you install BallKey once, new versions arrive like
 any other app update.
@@ -51,8 +50,8 @@ any other app update.
 - **Debian-based:** the package adds BallKey's signed update repository
   (on GitHub Pages), so Discover / Software and `sudo apt update && sudo apt upgrade`
   find new versions by themselves.
-- **Arch:** install from the AUR to get updates with `yay -Syu`. The
-  `.pkg.tar.zst` from the Releases page doesn't update by itself.
+- **Arch:** download and install new versions by hand for now (an AUR
+  package is coming).
 
 **Older versions** (back to 0.1.0) are on the
 [Releases page](https://github.com/gino8807/ballkey/releases), in case
