@@ -39,17 +39,18 @@ Download the package for your distribution, then:
 | Debian-based | `ballkey_…_all.deb` | `sudo apt install ./ballkey_*_all.deb` |
 | Arch Linux | `ballkey-…-any.pkg.tar.zst` | `sudo pacman -U ballkey-*-any.pkg.tar.zst` |
 
-**Updates:** after you install BallKey once, new versions arrive like
-any other app update.
+**Updates:**
 
 - **Fedora:** the package adds BallKey's update repository
   ([COPR](https://copr.fedorainfracloud.org/coprs/gino8807/ballkey/)),
   so Discover / Software and `dnf upgrade` find new versions by themselves.
   You can also install straight from it:
   `sudo dnf copr enable gino8807/ballkey && sudo dnf install ballkey`.
-- **Debian-based:** the package adds BallKey's signed update repository
-  (on GitHub Pages), so Discover / Software and `sudo apt update && sudo apt upgrade`
-  find new versions by themselves.
+- **Debian-based:** automatic updates are coming in the next version
+  (0.1.6). Its package will add BallKey's update repository, so Discover /
+  Software and `sudo apt update && sudo apt upgrade` find new versions by
+  themselves. Until then, and to get 0.1.6 itself, download and install
+  new versions by hand.
 - **Arch:** I'm working on automatic updates for Arch. For now,
   download and install new versions by hand.
 
