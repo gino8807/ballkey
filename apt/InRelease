@@ -1,0 +1,26 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA512
+
+Date: Wed, 21 Oct 2026 16:41:49 +0000
+Description: BallKey updates
+Label: BallKey
+Origin: BallKey
+MD5Sum:
+ 811bef2309d294fce5974840bee9a58b              881 Packages
+ 7912c101544111e6072cb75383c84c80              583 Packages.gz
+SHA1:
+ 089aaedfc33d82038c1543c449fa4ca8c72faac7              881 Packages
+ 006ab4e8faa95de0715d9efce04956e91fe6070d              583 Packages.gz
+SHA256:
+ 504e1c0d1f3487d773e96254afa65cdfca23672535d780545244b56ac60e4a70              881 Packages
+ 2a657e54a2e0fa44eb4e06290b7e162b88e7509dce707f9bcf06727bed3b006a              583 Packages.gz
+SHA512:
+ c7d91989a854623184412886496398b35fc001fef080ad1a0d32a700dfae2823db6500dfe88d146879cfc220ef4fc51cc86e07ba3d3afb809ca5ec73adea4ea8              881 Packages
+ f571db8d03cab457426d6fa380ef9df7b27b492ce72755998267b1faa251b81e9f76a99c4186ea0d23c9ddf58c231788473949b7b67b68b3f24cdc26d4c746ea              583 Packages.gz
+-----BEGIN PGP SIGNATURE-----
+
+iHUEARYKAB0WIQTLzj7jEldw9uQIj+/lEpVcl5K4sgUCatjrTQAKCRDlEpVcl5K4
+skQaAQCm9AmmeVU51I5vmQ43BEEA/sXHUoLv983/cQ0IusMyTwD8DMwDSNUIT1y6
+zV2MvbMlQwczcHdUkWsfDAvxf7tGlQw=
+=IoNO
+-----END PGP SIGNATURE-----
