@@ -41,9 +41,11 @@ for f in /usr/lib/ballkey/ballkeyd.py /usr/lib/ballkey/ballkey-settings.py \
          /usr/share/licenses/ballkey/LICENSE; do
     check "$f" test -e "$f"
 done
-if [[ $kind == rpm ]]; then
-    check "update repository added" test -e /etc/yum.repos.d/ballkey.repo
-fi
+case $kind in
+    rpm) check "update repository added" test -e /etc/yum.repos.d/ballkey.repo ;;
+    deb) check "update repository added" test -e /etc/apt/sources.list.d/ballkey.sources
+         check "update repository key added" test -e /usr/share/keyrings/ballkey-archive-keyring.asc ;;
+esac
 check "service enabled at boot" \
     test -L /etc/systemd/system/multi-user.target.wants/ballkey.service
 
@@ -104,9 +106,11 @@ check "settings gone" test ! -e /etc/ballkey
 check "boot link gone" \
     test ! -e /etc/systemd/system/multi-user.target.wants/ballkey.service
 check "launcher gone" test ! -e /usr/share/applications/ballkey-settings.desktop
-if [[ $kind == rpm ]]; then
-    check "update repository gone" test ! -e /etc/yum.repos.d/ballkey.repo
-fi
+case $kind in
+    rpm) check "update repository gone" test ! -e /etc/yum.repos.d/ballkey.repo ;;
+    deb) check "update repository gone" test ! -e /etc/apt/sources.list.d/ballkey.sources
+         check "update repository key gone" test ! -e /usr/share/keyrings/ballkey-archive-keyring.asc ;;
+esac
 
 echo
 if [[ $failures -eq 0 ]]; then echo "ALL PASSED ($name)"; else echo "$failures FAILED ($name)"; fi

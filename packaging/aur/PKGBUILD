@@ -1,0 +1,30 @@
+# Maintainer: gino <gino8807 at protonmail dot com>
+# Recipe for the AUR package. scripts/aur-publish.sh fills in the version
+# and checksum and publishes it. Installs the same files as nfpm.yaml.
+pkgname=ballkey
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc='Simple button remapper for mice and trackballs'
+arch=(any)
+url='https://github.com/gino8807/ballkey'
+license=(GPL-3.0-or-later)
+# Same as the archlinux depends in nfpm.yaml.
+depends=(python python-evdev python-pyudev python-dbus python-gobject pyside6 polkit hicolor-icon-theme)
+install=ballkey.install
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('@SHA256@')
+
+package() {
+    cd "$pkgname-$pkgver"
+    install -Dm755 daemon/ballkeyd.py "$pkgdir/usr/lib/ballkey/ballkeyd.py"
+    install -Dm755 gui/ballkey-settings.py "$pkgdir/usr/lib/ballkey/ballkey-settings.py"
+    install -Dm644 packaging/ballkey.service "$pkgdir/usr/lib/systemd/system/ballkey.service"
+    install -Dm644 packaging/ballkey-uinput.conf "$pkgdir/usr/lib/modules-load.d/ballkey-uinput.conf"
+    install -Dm644 packaging/org.ballkey.Daemon.conf "$pkgdir/usr/share/dbus-1/system.d/org.ballkey.Daemon.conf"
+    install -Dm644 packaging/org.ballkey.Daemon.service "$pkgdir/usr/share/dbus-1/system-services/org.ballkey.Daemon.service"
+    install -Dm644 packaging/org.ballkey.policy "$pkgdir/usr/share/polkit-1/actions/org.ballkey.policy"
+    install -Dm644 packaging/ballkey-settings.desktop "$pkgdir/usr/share/applications/ballkey-settings.desktop"
+    install -Dm644 packaging/ballkey.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/ballkey.svg"
+    install -Dm644 LICENSE "$pkgdir/usr/share/licenses/ballkey/LICENSE"
+    install -dm755 "$pkgdir/etc/ballkey"
+}

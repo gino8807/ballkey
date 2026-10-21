@@ -38,13 +38,21 @@ Download the package for your distribution, then:
 | Fedora 44+ | `ballkey-…fc44.noarch.rpm` | Double-click it (opens Discover / Software), or `sudo dnf install ./ballkey-*.noarch.rpm` |
 | Debian-based | `ballkey_…_all.deb` | `sudo apt install ./ballkey_*_all.deb` |
 | Arch Linux | `ballkey-…-any.pkg.tar.zst` | `sudo pacman -U ballkey-*-any.pkg.tar.zst` |
+| Arch Linux (AUR) | [`ballkey`](https://aur.archlinux.org/packages/ballkey) | `yay -S ballkey` (or any AUR helper) |
 
-**Fedora updates:** the Fedora package also adds BallKey's update
-repository ([COPR](https://copr.fedorainfracloud.org/coprs/gino8807/ballkey/)),
-so Discover / Software and `dnf upgrade` find new versions by themselves.
-You can also install straight from it:
-`sudo dnf copr enable gino8807/ballkey && sudo dnf install ballkey`.
-On Debian-based distributions and Arch, download and install new versions by hand for now.
+**Updates:** after you install BallKey once, new versions arrive like
+any other app update.
+
+- **Fedora:** the package adds BallKey's update repository
+  ([COPR](https://copr.fedorainfracloud.org/coprs/gino8807/ballkey/)),
+  so Discover / Software and `dnf upgrade` find new versions by themselves.
+  You can also install straight from it:
+  `sudo dnf copr enable gino8807/ballkey && sudo dnf install ballkey`.
+- **Debian-based:** the package adds BallKey's signed update repository
+  (on GitHub Pages), so Discover / Software and `sudo apt update && sudo apt upgrade`
+  find new versions by themselves.
+- **Arch:** install from the AUR to get updates with `yay -Syu`. The
+  `.pkg.tar.zst` from the Releases page doesn't update by itself.
 
 **Older versions** (back to 0.1.0) are on the
 [Releases page](https://github.com/gino8807/ballkey/releases), in case
@@ -168,6 +176,12 @@ packages from `nfpm.yaml`, which also holds the version number for all
 three. `./scripts/copr-upload.sh` sends the source package to the COPR
 update repository (needs a COPR API token in `~/.config/copr`; the owner
 is set in `packaging/copr-owner`).
+`./scripts/apt-publish.sh` adds the `.deb` to the Debian update
+repository (the `apt/` folder of the `gh-pages` branch, served by GitHub
+Pages), signed with the key from `./scripts/apt-make-key.sh`, which stays
+in `~/.config/ballkey/apt-signing-key`. `./scripts/aur-publish.sh`
+publishes `packaging/aur/PKGBUILD` to the AUR once the version's git tag
+is on GitHub (needs your SSH key on your AUR account).
 
 For development, `sudo ./scripts/dev-install.sh` installs straight from
 the source folder (undo with `sudo ./scripts/dev-uninstall.sh`), and

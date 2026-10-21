@@ -1,4 +1,5 @@
-# Package recipe for the .deb and Arch packages (nfpm). Build all with:
+# Package recipe for the .deb and Arch packages (nfpm). The AUR package
+# (packaging/aur/PKGBUILD) installs the same files. Build all with:
 #   ./scripts/build-packages.sh
 name: ballkey
 arch: all
@@ -38,6 +39,14 @@ contents:
     dst: /usr/share/icons/hicolor/scalable/apps/ballkey.svg
   - src: LICENSE
     dst: /usr/share/licenses/ballkey/LICENSE
+  # Update repository (.deb only), so Discover / Software / apt find new
+  # versions. Not a conffile, so uninstalling removes it.
+  - src: packaging/ballkey-apt.sources
+    dst: /etc/apt/sources.list.d/ballkey.sources
+    packager: deb
+  - src: packaging/ballkey-archive-keyring.asc
+    dst: /usr/share/keyrings/ballkey-archive-keyring.asc
+    packager: deb
   # Folders the package owns, so uninstalling removes them too.
   - dst: /usr/lib/ballkey
     type: dir
@@ -84,3 +93,4 @@ overrides:
       - python-gobject
       - pyside6
       - polkit
+      - hicolor-icon-theme

@@ -141,4 +141,4 @@ They can't be part of a combination.
 
 ## Later ideas (not v1)
 
-Scroll and pointer speed, slow-pointer precision toggle, text snippets, launch-an-app action, per-app profiles, Fedora COPR repo, AUR entry.
+Scroll and pointer speed, slow-pointer precision toggle, text snippets, launch-an-app action, per-app profiles.

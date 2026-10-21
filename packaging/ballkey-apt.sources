@@ -1,0 +1,6 @@
+# BallKey update repository, so Discover / Software / apt find new versions.
+# Added by the ballkey package; removed when it is uninstalled.
+Types: deb
+URIs: https://gino8807.github.io/ballkey/apt/
+Suites: ./
+Signed-By: /usr/share/keyrings/ballkey-archive-keyring.asc
