@@ -50,7 +50,9 @@ Download the package for your distribution, then:
   update repository (on GitHub Pages), so Discover / Software and
   `sudo apt update && sudo apt upgrade` find new versions by themselves.
   If you have 0.1.5 or older, install 0.1.6 by hand once.
-- **Arch:** I'm working on automatic updates for Arch. For now,
+- **Arch:** automatic updates for Arch aren't available yet. They'll
+  come through the AUR, but AUR account registration is currently down,
+  so I can't publish BallKey there yet. It's in my plans. For now,
   download and install new versions by hand.
 
 **Older versions** (back to 0.1.0) are on the
@@ -96,6 +98,9 @@ combination…**, tick two or more buttons, and choose what pressing them
 **Left + Right** to **Middle click**. The buttons in a combination still
 work on their own; they just react a few milliseconds later, while
 BallKey waits to see whether you're pressing the other ones too.
+Buttons that type keys (see below) can be in combinations too, with
+mouse buttons or with each other, for example the G502's Ctrl+C and
+Ctrl+V buttons together. Wheel tilt can't, since it's never held down.
 
 **Start remapping at boot** (on by default): untick it if you don't want
 your buttons changed after a restart. Opening BallKey turns remapping
@@ -107,9 +112,24 @@ tilting scrolls sideways as usual.
 
 **Buttons that type keys**: some gaming mice, like the Logitech G502,
 have buttons that type a shortcut (for example Ctrl+C) instead of acting
-as mouse buttons. Click **Identify button** and press one: it's added to
-the list as "Button that types Ctrl+C", and you can give it any action.
-Left on Default, it keeps typing its shortcut.
+as mouse buttons. On the G502 HERO, the two that type Ctrl+C and Ctrl+V
+from the factory are already in the list. For any other one, click
+**Identify button** and press it: it's added to the list, for example as
+"Button that types Ctrl+C", and you can give it any action or use it in
+a combination. Left on Default, it keeps typing its shortcut.
+
+Linux can't tell which buttons type which keys until you press them, so
+BallKey only knows the G502's factory shortcuts. If you changed them
+with Piper, the list still shows Ctrl+C and Ctrl+V; identify the
+buttons again to add what they type now.
+
+If your mouse shows up in your system as part keyboard, like the G502
+(it's listed as both a mouse and a keyboard), any button that isn't
+in the list should appear after you click **Identify button** and press
+it. If it doesn't (apart from the buttons the mouse handles by itself,
+below), please
+[open a bug report](https://github.com/gino8807/ballkey/issues) with
+your mouse's name so I can fix it.
 
 Buttons the mouse handles by itself, like the G502's DPI and sniper
 buttons, send nothing to the computer, so BallKey can't change them. To
@@ -118,11 +138,12 @@ change DPI or reassign the DPI and sniper buttons, use
 BallKey.
 
 The list shows the common buttons; extra buttons appear when you use
-**Identify button** on them. **Restore defaults** sets every button back
+**Identify button** on them. BallKey remembers identified buttons for
+each mouse, so you only identify each one once. **Restore defaults** sets every button back
 to normal and removes all combinations (click **Apply** to save).
 
 **Forget** (next to the device list) removes the device BallKey has set
-up, together with its button settings. Use it for a mouse you no longer
+up, together with its button settings and identified buttons. Use it for a mouse you no longer
 have; it shows as "(not connected)" in the list.
 
 ## Uninstall

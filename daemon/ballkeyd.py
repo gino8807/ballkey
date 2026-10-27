@@ -251,7 +251,7 @@ class Chord:
             # A tilt has no "held down", so it can't be pressed together.
             raise ValueError(f"{self.label}: wheel tilt can't be part of "
                              "a combination")
-        self.buttons = frozenset(code_of(n) for n in self.names)
+        self.buttons = frozenset(button_code(n) for n in self.names)
         if spec.get("action") == "default":
             raise ValueError(f"{self.label}: combination can't be 'default'")
         self.mapping = Mapping(self.label, spec)
@@ -496,8 +496,11 @@ class Daemon(dbus.service.Object):
         self.last_error = ""
         self.dev = self.ui = self.dev_watch = None
         self.companions = []      # the device's keyboard part (Companion)
-        # Mapped key-combo buttons held down: (Mapping, keys still down).
-        self.combos_held = []
+        # Keys from the keyboard part that BallKey took over (their button
+        # is mapped or in a combination), so they aren't typed.
+        self.swallowed = set()
+        # Those buttons held down: (button, keys whose release ends it).
+        self.key_buttons_held = []
         self.waiting_logged = False
         self.identify_main = False   # identifying on the remapped device
         self.identify_dev = self.identify_watch = self.identify_timeout = None
@@ -705,31 +708,52 @@ class Daemon(dbus.service.Object):
 
     def companion_frame(self, frame):
         """One frame from the keyboard part. The keys pressed in it are
-        one mouse button (e.g. Ctrl+C); if that's mapped, its action runs
-        instead of the keys. Everything else is passed on unchanged."""
+        one mouse button (e.g. Ctrl+C). If that button is mapped or part
+        of a combination, it's handled like any other button instead of
+        typing its keys. Everything else is passed on unchanged."""
         pressed = pressed_keys(frame)
+        button, keys = self.taken_key_button(pressed)
         if pressed and self.identify_main:
-            self.ButtonPressed(keys_name(pressed))
-        mapping = self.mappings.get(key_button(pressed)) if pressed else None
-        if mapping:
-            self.combos_held.append((mapping, set(pressed)))
-        passed = []
+            self.ButtonPressed(keys_name(keys))
+        if button is not None:
+            self.swallowed |= pressed
+            # It ends when its own key (e.g. C) is let go; a shared Ctrl
+            # may stay down for another button.
+            ends = {k for k in keys if k not in MODIFIERS} or set(keys)
+            self.key_buttons_held.append((button, ends))
+        released, passed = [], []
         for e in frame:
-            held = next((h for h in self.combos_held
-                         if e.type == ecodes.EV_KEY and e.code in h[1]), None)
-            if held is None:
+            if e.type != ecodes.EV_KEY or e.code not in self.swallowed:
                 passed.append(e)
             elif e.value == 0:
-                # The action ends when all its keys have been let go.
-                held[1].discard(e.code)
-                if not held[1]:
-                    self.combos_held.remove(held)
-                    held[0].handle(self.ui, 0, self.locked)
-        if mapping:
-            mapping.handle(self.ui, 1, self.locked)
+                self.swallowed.discard(e.code)
+                for held in list(self.key_buttons_held):
+                    held[1].discard(e.code)
+                    if not held[1]:
+                        self.key_buttons_held.remove(held)
+                        released.append(held[0])
+        for b in released:
+            self.key_event(b, 0)
+        if button is not None:
+            self.key_event(button, 1)
         for e in passed:
             self.ui.write_event(e)
         self.ui.syn()
+
+    def taken_key_button(self, pressed):
+        """(button, its keys) if these keys are a mapped button or one in
+        a combination, else (None, pressed). With two such buttons held
+        (e.g. Ctrl+C and Ctrl+V), the mouse doesn't press the shared Ctrl
+        again, so the Ctrl still held is tried too."""
+        if not pressed:
+            return None, pressed
+        held_mods = {k for k in self.swallowed if k in MODIFIERS}
+        for keys in (pressed, pressed | held_mods):
+            button = key_button(keys)
+            if button in self.mappings or any(
+                    button in c.buttons for c in self.chords):
+                return button, keys
+        return None, pressed
 
     def on_dev_events(self, fd, cond):
         try:
@@ -753,6 +777,11 @@ class Daemon(dbus.service.Object):
         code, value = event.code, event.value
         if value == 1 and self.identify_main:
             self.report_button(code)
+        self.key_event(code, value)
+
+    def key_event(self, code, value):
+        """A button press, release or repeat, from the mouse or a button
+        of its keyboard part, checked against the combinations first."""
         if self.active_chord and code in self.active_chord.buttons:
             self.chord_button(code, value)
         elif code in self.pending:
@@ -780,6 +809,12 @@ class Daemon(dbus.service.Object):
             mapping = self.held.get(code)
         if mapping:
             mapping.handle(self.ui, value, self.locked)
+        elif isinstance(code, frozenset):
+            # A key-combo button held back for a combination that didn't
+            # happen: type its keys after all, modifiers first.
+            keys = sorted(code, key=lambda c: (c not in MODIFIERS, c))
+            for key in (keys if value == 1 else reversed(keys)):
+                self.ui.write(ecodes.EV_KEY, key, value)
         else:
             self.ui.write(ecodes.EV_KEY, code, value)
             if value == 0:
@@ -881,7 +916,8 @@ class Daemon(dbus.service.Object):
                 pass
             companion.close()
         self.companions = []
-        self.combos_held = []
+        self.swallowed = set()
+        self.key_buttons_held = []
         if self.dev:
             try:
                 self.dev.ungrab()

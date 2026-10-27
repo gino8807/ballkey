@@ -173,6 +173,43 @@ class KeyButtonTest(unittest.TestCase):
         self.assertEqual(pressed, ["KEY_LEFTCTRL+KEY_V",
                                    "KEY_LEFTCTRL+KEY_C"])
 
+    def test_key_button_and_mouse_button_combination(self):
+        d = make_daemon({}, [{"buttons": ["KEY_LEFTCTRL+KEY_C", "BTN_LEFT"],
+                              "action": "middle"}])
+        replay_keyboard_part(d, G502_CTRL_C[:3])
+        replay(d, [(EV_KEY, ecodes.BTN_LEFT, 1), SYN])
+        replay_keyboard_part(d, G502_CTRL_C[3:])
+        sent = replay(d, [(EV_KEY, ecodes.BTN_LEFT, 0), SYN])
+        keys = [e for e in sent if e[0] == EV_KEY]
+        self.assertEqual(keys, [(EV_KEY, ecodes.BTN_MIDDLE, 1),
+                                (EV_KEY, ecodes.BTN_MIDDLE, 0)])
+
+    def test_ctrl_c_and_ctrl_v_buttons_combination(self):
+        # Both held: the mouse keeps one Ctrl down, so the second button
+        # only sends V (how a keyboard reports it; not recorded yet).
+        d = make_daemon({}, [{"buttons": ["KEY_LEFTCTRL+KEY_C",
+                                          "KEY_LEFTCTRL+KEY_V"],
+                              "action": "middle"}])
+        sent = replay_keyboard_part(d, G502_CTRL_C[:3] + [
+            (EV_KEY, ecodes.KEY_V, 1), SYN,
+            (EV_KEY, ecodes.KEY_C, 0), SYN,
+            (EV_KEY, ecodes.KEY_LEFTCTRL, 0), (EV_KEY, ecodes.KEY_V, 0),
+            SYN])
+        keys = [e for e in sent if e[0] == EV_KEY]
+        self.assertEqual(keys, [(EV_KEY, ecodes.BTN_MIDDLE, 1),
+                                (EV_KEY, ecodes.BTN_MIDDLE, 0)])
+
+    def test_combination_key_button_alone_still_types(self):
+        d = make_daemon({}, [{"buttons": ["KEY_LEFTCTRL+KEY_C", "BTN_LEFT"],
+                              "action": "middle"}])
+        replay_keyboard_part(d, G502_CTRL_C[:3])
+        d.on_pending_timeout()   # nothing else came in time
+        sent = replay_keyboard_part(d, G502_CTRL_C[3:])
+        keys = [e for e in sent if e[0] == EV_KEY]
+        self.assertEqual(keys, [
+            (EV_KEY, ecodes.KEY_LEFTCTRL, 1), (EV_KEY, ecodes.KEY_C, 1),
+            (EV_KEY, ecodes.KEY_C, 0), (EV_KEY, ecodes.KEY_LEFTCTRL, 0)])
+
     def test_combo_name_order_doesnt_matter(self):
         self.assertEqual(ballkeyd.button_code("KEY_V+KEY_LEFTCTRL"),
                          ballkeyd.button_code("KEY_LEFTCTRL+KEY_V"))

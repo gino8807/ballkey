@@ -42,6 +42,13 @@ COMMON_BUTTONS = ["BTN_LEFT", "BTN_RIGHT", "BTN_MIDDLE", "BTN_SIDE",
 # Wheel tilt (sideways scrolling). Shown for devices that have it; they
 # can't be part of a combination.
 TILT_BUTTONS = ["TILT_LEFT", "TILT_RIGHT"]
+# Buttons that type keys out of the box on mice we know, by (vendor,
+# product). Shown without having to identify them first. Other ones (or
+# these, if changed with Piper) are still added with Identify button.
+KNOWN_KEY_BUTTONS = {
+    # Logitech G502 HERO: the two front buttons below left click.
+    ("046d", "c08b"): ["KEY_LEFTCTRL+KEY_C", "KEY_LEFTCTRL+KEY_V"],
+}
 BUTTON_LABELS = {
     "TILT_LEFT": "Wheel tilt left (scroll left)",
     "TILT_RIGHT": "Wheel tilt right (scroll right)",
@@ -113,7 +120,7 @@ KEY_LABELS = {
 
 def is_key_button(name):
     """A mouse button that types keys (e.g. 'KEY_LEFTCTRL+KEY_C'), as some
-    mice like the Logitech G502 have. These can't be in a combination."""
+    mice like the Logitech G502 have."""
     return name.startswith("KEY_")
 
 
@@ -124,8 +131,10 @@ def button_label(name):
 
 
 def chord_label(buttons):
-    return " + ".join(BUTTON_SHORT_LABELS.get(b, b.removeprefix("BTN_"))
-                      for b in buttons)
+    return " + ".join(
+        combo_label(b.split("+")) if is_key_button(b)
+        else BUTTON_SHORT_LABELS.get(b, b.removeprefix("BTN_"))
+        for b in buttons)
 
 
 def key_label(name):
@@ -160,6 +169,48 @@ def all_keys():
 
 def device_key(dev):
     return (dev["vendor"], dev["product"], dev["name"])
+
+
+# Buttons found with Identify, remembered per device so each one only has
+# to be identified once. Kept in the user's own folder: no password needed.
+IDENTIFIED_FILE = os.path.join(
+    os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
+    "ballkey", "identified.json")
+
+
+def identified_key(dev):
+    return ":".join(device_key(dev))
+
+
+def load_identified():
+    try:
+        with open(IDENTIFIED_FILE) as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def identified_buttons(dev):
+    names = load_identified().get(identified_key(dev))
+    return {n for n in names if isinstance(n, str)} \
+        if isinstance(names, list) else set()
+
+
+def save_identified(dev, names):
+    """Remember these buttons for the device (none: forget them). Not being
+    able to save only means identifying them again next time."""
+    data = load_identified()
+    if names:
+        data[identified_key(dev)] = sorted(names)
+    else:
+        data.pop(identified_key(dev), None)
+    try:
+        os.makedirs(os.path.dirname(IDENTIFIED_FILE), exist_ok=True)
+        with open(IDENTIFIED_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except OSError:
+        pass
 
 
 def has_left_click(config):
@@ -662,8 +713,8 @@ class MainWindow(QWidget):
 
     def on_device_chosen(self, *_):
         self.stop_identify()
-        self.extra_rows.clear()
         dev = self.current_device()
+        self.extra_rows = identified_buttons(dev) if dev else set()
         configured = self.saved_config.get("device") if self.saved_config \
             else None
         if dev and configured and device_key(dev) == device_key(configured):
@@ -676,8 +727,8 @@ class MainWindow(QWidget):
         self.fill_chords(chords)
         if dev and dev.get("keyboard_part"):
             self.hint.setText(
-                "Some buttons on this device type keys (like Ctrl+C). To add "
-                "one to the list, click Identify button and press it.")
+                "Some buttons on this device type keys (like Ctrl+C). If one "
+                "isn't in the list, click Identify button and press it.")
         self.update_buttons()
 
     def fill_rows(self, mappings):
@@ -686,6 +737,9 @@ class MainWindow(QWidget):
         names = [b for b in COMMON_BUTTONS
                  if b in reported or not dev or not dev["connected"]]
         names += [b for b in TILT_BUTTONS if b in reported]
+        if dev and dev.get("keyboard_part"):
+            names += KNOWN_KEY_BUTTONS.get(
+                (dev["vendor"], dev["product"]), [])
         for b in list(mappings) + sorted(self.extra_rows):
             if b not in names:
                 names.append(b)
@@ -731,8 +785,7 @@ class MainWindow(QWidget):
     def add_chord(self):
         buttons = [self.table.item(row, 0).data(Qt.ItemDataRole.UserRole)
                    for row in range(self.table.rowCount())]
-        buttons = [b for b in buttons
-                   if b not in TILT_BUTTONS and not is_key_button(b)]
+        buttons = [b for b in buttons if b not in TILT_BUTTONS]
         taken =[box.button for box in self.chord_boxes()]
         dialog = ChordDialog(self, buttons, taken)
         if dialog.exec() != QDialog.DialogCode.Accepted:
@@ -845,6 +898,7 @@ class MainWindow(QWidget):
         row = self.row_of(name)
         if row is None:
             self.extra_rows.add(name)
+            save_identified(self.current_device(), self.extra_rows)
             row = self.add_row(name)
         self.table.selectRow(row)
         self.table.scrollToItem(self.table.item(row, 0))
@@ -890,9 +944,10 @@ class MainWindow(QWidget):
         dev = self.current_device()
         answer = QMessageBox.question(
             self, "Forget device?",
-            f"Forget <b>{dev['name']}</b>?<br><br>Its button settings will "
-            "be removed and it will behave normally. You can set it up "
-            "again any time while it's connected.")
+            f"Forget <b>{dev['name']}</b>?<br><br>Its button settings and "
+            "identified buttons will be removed and it will behave "
+            "normally. You can set it up again any time while it's "
+            "connected.")
         if answer != QMessageBox.StandardButton.Yes:
             return
         self.stop_identify()
@@ -905,6 +960,7 @@ class MainWindow(QWidget):
                 self.show_save_error(error_name, error_message)
                 return
             self.saved_config = new
+            save_identified(dev, set())
             self.load()
             self.on_device_chosen()   # show the rows without its settings
             self.hint.setText(f"Forgot {dev['name']}.")

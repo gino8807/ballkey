@@ -111,8 +111,14 @@ like Ctrl+C from buttons through it. The daemon grabs it together with
 the mouse. Keys pressed in the same frame are one button, named like
 `KEY_LEFTCTRL+KEY_C`; if mapped, its action runs (held while the button
 is held), otherwise the keys pass through unchanged. The app adds these
-buttons with Identify, since a keyboard part can type almost any key.
-They can't be part of a combination.
+buttons with Identify, since a keyboard part can type almost any key;
+known factory ones (G502 HERO's Ctrl+C and Ctrl+V) are listed without it.
+Since 2026-10-27 they can be part of a combination, with mouse buttons or
+with each other. When two are held, the mouse doesn't press a shared Ctrl
+again, so the daemon also tries the keys with the Ctrl it's still holding.
+The app remembers identified buttons per device (vendor:product:name) in
+`~/.config/ballkey/identified.json`, so each is identified only once;
+Forget clears them.
 
 (The IDs above are illustrative; read the real ones from the device.)
 
