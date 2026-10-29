@@ -31,6 +31,33 @@ welcome.
 
 ## Install
 
+### From the terminal
+
+BallKey isn't in Fedora's or Debian's own repositories, so these commands
+first add BallKey's update repository, then install from it. New versions
+then arrive with your normal system updates.
+
+**Fedora 44+:**
+
+```
+sudo dnf copr enable gino8807/ballkey
+sudo dnf install ballkey
+```
+
+**Debian-based:**
+
+```
+sudo wget -qO /usr/share/keyrings/ballkey-archive-keyring.asc https://raw.githubusercontent.com/gino8807/ballkey/main/packaging/ballkey-archive-keyring.asc
+sudo wget -qO /etc/apt/sources.list.d/ballkey.sources https://raw.githubusercontent.com/gino8807/ballkey/main/packaging/ballkey-apt.sources
+sudo apt update
+sudo apt install ballkey
+```
+
+The first two lines download BallKey's signing key and repository
+address, the same files the package installs itself.
+
+### From a downloaded package
+
 Download the package for your distribution, then:
 
 | Distribution | Package | Install |
@@ -44,8 +71,6 @@ Download the package for your distribution, then:
 - **Fedora:** the package adds BallKey's update repository
   ([COPR](https://copr.fedorainfracloud.org/coprs/gino8807/ballkey/)),
   so Discover / Software and `dnf upgrade` find new versions by themselves.
-  You can also install straight from it:
-  `sudo dnf copr enable gino8807/ballkey && sudo dnf install ballkey`.
 - **Debian-based:** from 0.1.6 on, the package adds BallKey's signed
   update repository (on GitHub Pages), so Discover / Software and
   `sudo apt update && sudo apt upgrade` find new versions by themselves.
