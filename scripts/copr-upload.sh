@@ -23,7 +23,9 @@ dnf -y -q install copr-cli >/dev/null 2>&1
 if ! copr-cli get $owner/ballkey >/dev/null 2>&1; then
     echo 'Creating COPR project $owner/ballkey...'
     copr-cli create ballkey \
+        --chroot fedora-43-x86_64 --chroot fedora-43-aarch64 \
         --chroot fedora-44-x86_64 --chroot fedora-44-aarch64 \
+        --chroot fedora-45-x86_64 --chroot fedora-45-aarch64 \
         --chroot fedora-rawhide-x86_64 --chroot fedora-rawhide-aarch64 \
         --description 'Simple graphical button remapper for any mouse or trackball (Wayland and X11).' \
         --instructions 'Easiest: download and double-click the .rpm from https://github.com/gino8807/ballkey/releases (it adds this repository). Or: sudo dnf copr enable $owner/ballkey && sudo dnf install ballkey' \
