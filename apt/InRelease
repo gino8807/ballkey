@@ -1,26 +1,26 @@
 -----BEGIN PGP SIGNED MESSAGE-----
 Hash: SHA512
 
-Date: Tue, 27 Oct 2026 13:37:28 +0000
+Date: Fri, 13 Nov 2026 22:11:39 +0000
 Description: BallKey updates
 Label: BallKey
 Origin: BallKey
 MD5Sum:
- 98b6bd99d8f51aacea4e9d55383dd074             2643 Packages
- b1a2db381e81c755805f7cda46dc01a9              968 Packages.gz
+ 065e55064cb85df9e4070afee647dd93             3524 Packages
+ d1110cfbd8dcc3d4d10b243c512a220d             1156 Packages.gz
 SHA1:
- 9fc2cba1999de0b376873446103c6419bedfb034             2643 Packages
- 2067270eda1102169675f25ce00f4a049cb7cddb              968 Packages.gz
+ 05452aaa86efdf0d2c1aaf627d11535d6a3e1012             3524 Packages
+ 5198c58f1e3fb83bbef9f3cd219d81f729114495             1156 Packages.gz
 SHA256:
- df161320e53834bb0bed9d7b1ac2bc7dd81b147b7ed3c00de5f0ba83e7a1056a             2643 Packages
- 24b37512526a6b4ede883029fc94ec8cc2504885deb7c1c01cf8637247d59e5e              968 Packages.gz
+ 93731070e6d712b696e214e7e11ecef16aa11e96b0155f6f32144d9e30c39a99             3524 Packages
+ d8d09ce6264f0b0f32b9a0e3fa2dcb4360889a7b3f97c3d6245e0bf95d8cd65e             1156 Packages.gz
 SHA512:
- 193dbbc83c7acc68584efef11f483a620487f71a2da32183fd408626273c5194650cc9f4f4ef010684278129a7cefc6da7a5765e34b2ae979eedd1cb974e9e6c             2643 Packages
- d07355d858c039c18cb27a542f2d737d78e7833170799a58d53c8a4ae2eefa733977660e3e0ed28e7587d16e50dcb2b98e6218d994b2a1dc5d5faa952a77ab10              968 Packages.gz
+ a06dfeff7163715f963ea3f0e9ed3318b8c6c88f41f0703aa08a0f629453ed1d0cc666b17334245dbde1966b7f3af627117452a348b8a1fd3dad675f86f8441a             3524 Packages
+ 41068ff970b1749e050cd9863ec792bd7b0a0bfc1c5b3d0b192efd89764fbff66fefd8ffa701ac418770a48616474e927dbc63934ae12adc13a30871057d7d2c             1156 Packages.gz
 -----BEGIN PGP SIGNATURE-----
 
-iHUEARYKAB0WIQTLzj7jEldw9uQIj+/lEpVcl5K4sgUCauCpGAAKCRDlEpVcl5K4
-srEeAQDEv6Ogk5H5g1t1KCBKOr/8aCm6uH/bYQfuYEo0/pOyygD/bHLgD+m83dSF
-W+JsY1YjIrdISscJUCdtzzzOsGOPVwk=
-=Jgld
+iHUEARYKAB0WIQTLzj7jEldw9uQIj+/lEpVcl5K4sgUCaveLGwAKCRDlEpVcl5K4
+ssvzAQCv4lwWxzcmjeKElY/VxjPpOWGtEvitF355ladhRGldRgEAouFJXhNi5dlg
+YsGX+mYEhwdeL9SUJg4WJVU2Juf6Rwc=
+=dNs1
 -----END PGP SIGNATURE-----
