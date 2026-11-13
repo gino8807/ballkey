@@ -8,11 +8,14 @@ cd "$(dirname "$0")/.."
 
 declare -A IMAGE=(
     [fedora]="registry.fedoraproject.org/fedora:44 rpm"
+    [fedora43]="registry.fedoraproject.org/fedora:43 rpm"
     [debian]="docker.io/library/debian:13 deb"
     [ubuntu]="docker.io/library/ubuntu:26.04 deb"
     [arch]="docker.io/library/archlinux:latest arch"
+    [arch2025]="docker.io/library/archlinux:base-20250105.0.295102 arch"
 )
-targets=("${@:-fedora debian ubuntu arch}")
+# fedora43 and arch2025 (Arch as of January 2025) are the oldest versions supported.
+targets=("${@:-fedora fedora43 debian ubuntu arch arch2025}")
 targets=(${targets[*]})
 
 ls dist/*.rpm dist/*.deb dist/*.pkg.tar.zst >/dev/null || {

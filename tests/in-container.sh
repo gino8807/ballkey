@@ -20,6 +20,13 @@ case $kind in
         apt-get update -qq
         apt-get install -y -qq /pkgs/ballkey_*_all.deb fonts-dejavu-core >/tmp/install.log 2>&1 ;;
     arch)
+        if [[ $name == arch2025 ]]; then
+            # Packages as they were then. Arch has since retired some of the
+            # keys they were signed with, so skip signature checks here.
+            echo 'Server = https://archive.archlinux.org/repos/2025/01/05/$repo/os/$arch' \
+                > /etc/pacman.d/mirrorlist
+            sed -i 's/^SigLevel.*/SigLevel = Never/' /etc/pacman.conf
+        fi
         pacman -Syu --noconfirm >/tmp/install.log 2>&1 &&
         pacman -U --noconfirm /pkgs/ballkey-*-any.pkg.tar.zst >>/tmp/install.log 2>&1 &&
         pacman -S --noconfirm ttf-dejavu >>/tmp/install.log 2>&1 ;;

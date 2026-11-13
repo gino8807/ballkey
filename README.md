@@ -37,14 +37,14 @@ BallKey isn't in Fedora's or Debian's own repositories, so these commands
 first add BallKey's update repository, then install from it. New versions
 then arrive with your normal system updates.
 
-**Fedora 44+:**
+**Fedora 43+:**
 
 ```
 sudo dnf copr enable gino8807/ballkey
 sudo dnf install ballkey
 ```
 
-**Debian-based:**
+**Debian 13+ and Debian-based:**
 
 ```
 sudo wget -qO /usr/share/keyrings/ballkey-archive-keyring.asc https://raw.githubusercontent.com/gino8807/ballkey/main/packaging/ballkey-archive-keyring.asc
@@ -62,8 +62,8 @@ Download the package for your distribution, then:
 
 | Distribution | Package | Install |
 |---|---|---|
-| Fedora 44+ | `ballkey-…fc44.noarch.rpm` | Double-click it (opens Discover / Software), or `sudo dnf install ./ballkey-*.noarch.rpm` |
-| Debian-based | `ballkey_…_all.deb` | `sudo apt install ./ballkey_*_all.deb` |
+| Fedora 43+ | `ballkey-…fc44.noarch.rpm` | Double-click it (opens Discover / Software), or `sudo dnf install ./ballkey-*.noarch.rpm` |
+| Debian 13+ and Debian-based | `ballkey_…_all.deb` | `sudo apt install ./ballkey_*_all.deb` |
 | Arch Linux | `ballkey-…-any.pkg.tar.zst` | `sudo pacman -U ballkey-*-any.pkg.tar.zst` |
 
 **Updates:**
