@@ -19,7 +19,7 @@ every boot and whenever the device is reconnected.
 ## About this project
 
 BallKey was vibecoded, and it's my first project. I don't know how to
-program: I described what I wanted, an AI coding assistant (Claude Code)
+program; I described what I wanted, an AI coding assistant (Claude Code)
 wrote the code, and I tested each step on my own computer (Fedora KDE,
 with a Logitech G502 HERO, Logitech G403 and Kensington Expert) before
 moving on. The Debian-based and Arch packages have only been tested in
